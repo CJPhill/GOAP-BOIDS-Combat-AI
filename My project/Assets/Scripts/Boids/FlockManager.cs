@@ -16,6 +16,9 @@ public class FlockManager : MonoBehaviour
     private Transform target;
     private SphereCollider aggroTrigger;
     private FlockState state = FlockState.Idle;
+    private int originalFlockSize;
+    private float currentFlockHealth;
+    private int currentAttackerCount;
 
     public FlockType FlockType => settings.flockType;
     public BoidSettings Settings => settings;
@@ -23,6 +26,49 @@ public class FlockManager : MonoBehaviour
     public int BoidCount => boids.Count;
     public Transform Target => target;
     public FlockState State => state;
+
+    public bool IsDead => currentFlockHealth <= 0f;
+    public float HealthPercent => settings != null ? currentFlockHealth / settings.maxHealth : 0f;
+
+    public void TakeDamage(float amount)
+    {
+        if (IsDead) return;
+        currentFlockHealth = Mathf.Max(currentFlockHealth - amount, 0f);
+        if (IsDead)
+            KillAllBoids();
+        else
+            SyncBoidCountToHealth();
+    }
+
+    private void SyncBoidCountToHealth()
+    {
+        if (originalFlockSize == 0) return;
+
+        // Scale live boid count from minSurvivorFraction..1 as health goes 0..1
+        // Keeps the last minSurvivorFraction alive until health reaches 0
+        float hp = currentFlockHealth / settings.maxHealth;
+        int targetCount = Mathf.RoundToInt(
+            Mathf.Lerp(settings.minSurvivorFraction, 1f, hp) * originalFlockSize);
+
+        while (boids.Count > targetCount)
+        {
+            int last = boids.Count - 1;
+            BoidAgent dying = boids[last];
+            boids.RemoveAt(last);
+            Destroy(dying.gameObject);
+        }
+    }
+
+    private void KillAllBoids()
+    {
+        for (int i = boids.Count - 1; i >= 0; i--)
+            Destroy(boids[i].gameObject);
+        boids.Clear();
+
+        FlockCoordinator coordinator = FindFirstObjectByType<FlockCoordinator>();
+        coordinator?.UnregisterFlock(this);
+        Destroy(gameObject);
+    }
 
     public float EffectiveBoundaryRadius
     {
@@ -42,6 +88,19 @@ public class FlockManager : MonoBehaviour
                 return settings.engageAvoidanceRadius;
             return settings.avoidanceRadius;
         }
+    }
+
+    public bool RequestAttack()
+    {
+        if (currentAttackerCount >= settings.maxSimultaneousAttackers)
+            return false;
+        currentAttackerCount++;
+        return true;
+    }
+
+    public void ReleaseAttack()
+    {
+        currentAttackerCount = Mathf.Max(currentAttackerCount - 1, 0);
     }
 
     public void SetTarget(Transform t)
@@ -82,7 +141,11 @@ public class FlockManager : MonoBehaviour
     private void Start()
     {
         if (boidPrefab != null && settings != null)
+        {
             SpawnFlock();
+            originalFlockSize = boids.Count;
+            currentFlockHealth = settings.maxHealth;
+        }
     }
 
     private void Update()

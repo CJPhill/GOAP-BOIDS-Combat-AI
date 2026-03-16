@@ -1,12 +1,29 @@
 using UnityEngine;
 
-public class BoidAgent : MonoBehaviour
+public class BoidAgent : MonoBehaviour, IEnemy
 {
     [HideInInspector] public BoidSettings settings;
     [HideInInspector] public FlockManager manager;
 
+    private enum AttackState { Flocking, WindUp, Charging, Circling, Firing, Cooldown }
+
     private Vector3 velocity;
     private Transform cachedTransform;
+    private AttackState attackState = AttackState.Flocking;
+    private float attackStateTimer;
+    private float cooldownTimer;
+    private Vector3 chargeDirection;
+    private bool damageDealtThisCharge;
+    private float circleAngle;
+
+    // IEnemy proxies to the flock — combat teammate calls these without knowing about flocks
+    public bool IsDead => manager.IsDead;
+    public float HealthPercent => manager.HealthPercent;
+
+    public void TakeDamage(float amount)
+    {
+        manager.TakeDamage(amount);
+    }
 
     public Vector3 Position => cachedTransform.position;
     public Vector3 Velocity => velocity;
@@ -26,44 +43,60 @@ public class BoidAgent : MonoBehaviour
     {
         Vector3 acceleration = Vector3.zero;
 
-        // Apply the three core flocking rules
-        if (neighborCount > 0)
+        // Suppress flocking and seek forces while executing an attack
+        if (!IsAttacking)
         {
-            acceleration += SteerTowards(separationHeading) * settings.separationWeight;
-            acceleration += SteerTowards(alignmentHeading) * settings.alignmentWeight;
-            acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight;
+            // Apply the three core flocking rules
+            if (neighborCount > 0)
+            {
+                acceleration += SteerTowards(separationHeading) * settings.separationWeight;
+                acceleration += SteerTowards(alignmentHeading) * settings.alignmentWeight;
+                acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight;
+            }
+
+            // Cross-flock avoidance (independent of same-flock neighbors)
+            acceleration += SteerTowards(crossFlockSeparation) * settings.crossFlockSeparationWeight;
+
+            // Boundary steering
+            acceleration += ComputeBoundarySteer();
+
+            // Target-seek steering (per-boid, only when Engaging)
+            if (manager.Target != null && manager.State == FlockManager.FlockState.Engaging && settings.targetSeekWeight > 0f)
+            {
+                Vector3 targetOffset = manager.Target.position - cachedTransform.position;
+                float targetDist = targetOffset.magnitude;
+
+                if (targetDist > settings.targetKeepDistance)
+                    acceleration += SteerTowards(targetOffset) * settings.targetSeekWeight;
+                else
+                    acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight;
+            }
         }
 
-        // Cross-flock avoidance (independent of same-flock neighbors)
-        acceleration += SteerTowards(crossFlockSeparation) * settings.crossFlockSeparationWeight;
-
-        // Boundary steering
-        acceleration += ComputeBoundarySteer();
-
-        // Target-seek steering (per-boid, only when Engaging)
-        if (manager.Target != null && manager.State == FlockManager.FlockState.Engaging && settings.targetSeekWeight > 0f)
+        // Attack state machine — branched by flock type
+        if (manager.Target != null && manager.State == FlockManager.FlockState.Engaging && !manager.IsDead)
         {
-            Vector3 targetOffset = manager.Target.position - cachedTransform.position;
-            float targetDist = targetOffset.magnitude;
-
-            if (targetDist > settings.targetKeepDistance)
-                acceleration += SteerTowards(targetOffset) * settings.targetSeekWeight;
-            else
-                acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight;
+            if (settings.flockType == FlockType.Melee)
+                UpdateMeleeAttackState(ref acceleration);
+            else if (settings.flockType == FlockType.Ranged)
+                UpdateRangedAttackState(ref acceleration);
         }
 
         // Obstacle avoidance
         acceleration += ComputeObstacleAvoidance();
 
-        // Apply acceleration to velocity
-        velocity += acceleration * Time.deltaTime;
-
-        // Clamp speed between min and max
-        float speed = velocity.magnitude;
-        if (speed > 0f)
+        // Apply acceleration to velocity (skip during attack — velocity set directly)
+        if (!IsAttacking)
         {
-            speed = Mathf.Clamp(speed, settings.minSpeed, settings.maxSpeed);
-            velocity = velocity.normalized * speed;
+            velocity += acceleration * Time.deltaTime;
+
+            // Clamp speed between min and max
+            float speed = velocity.magnitude;
+            if (speed > 0f)
+            {
+                speed = Mathf.Clamp(speed, settings.minSpeed, settings.maxSpeed);
+                velocity = velocity.normalized * speed;
+            }
         }
 
         // Move and orient
@@ -71,6 +104,151 @@ public class BoidAgent : MonoBehaviour
         if (velocity.sqrMagnitude > 0.001f)
         {
             cachedTransform.forward = velocity.normalized;
+        }
+    }
+
+    public bool IsAttacking => attackState == AttackState.WindUp
+        || attackState == AttackState.Charging
+        || attackState == AttackState.Circling
+        || attackState == AttackState.Firing;
+
+    private void UpdateMeleeAttackState(ref Vector3 acceleration)
+    {
+        switch (attackState)
+        {
+            case AttackState.Flocking:
+            {
+                if (cooldownTimer > 0f)
+                {
+                    cooldownTimer -= Time.deltaTime;
+                    break;
+                }
+
+                float dist = (manager.Target.position - cachedTransform.position).magnitude;
+                if (dist <= settings.attackTriggerDistance && manager.RequestAttack())
+                {
+                    attackState = AttackState.WindUp;
+                    attackStateTimer = settings.attackWindUpDuration;
+                }
+                break;
+            }
+
+            case AttackState.WindUp:
+            {
+                // Fly directly away from the player
+                Vector3 awayDir = (cachedTransform.position - manager.Target.position).normalized;
+                velocity = awayDir * (settings.attackWindUpDistance / settings.attackWindUpDuration);
+
+                attackStateTimer -= Time.deltaTime;
+                if (attackStateTimer <= 0f)
+                {
+                    // Lock in charge direction toward player at moment of release
+                    chargeDirection = (manager.Target.position - cachedTransform.position).normalized;
+                    damageDealtThisCharge = false;
+                    attackState = AttackState.Charging;
+                    attackStateTimer = settings.attackChargeDuration;
+                }
+                break;
+            }
+
+            case AttackState.Charging:
+            {
+                // Dash through the player
+                velocity = chargeDirection * settings.attackChargeSpeed;
+
+                // Deal damage once when close enough
+                if (!damageDealtThisCharge)
+                {
+                    float dist = (manager.Target.position - cachedTransform.position).magnitude;
+                    if (dist <= settings.attackContactDistance)
+                    {
+                        manager.Target.GetComponent<PlayerHealth>()?.TakeDamage(settings.attackDamage);
+                        damageDealtThisCharge = true;
+                    }
+                }
+
+                attackStateTimer -= Time.deltaTime;
+                if (attackStateTimer <= 0f)
+                {
+                    manager.ReleaseAttack();
+                    cooldownTimer = settings.attackCooldown;
+                    attackState = AttackState.Flocking;
+                }
+                break;
+            }
+        }
+    }
+
+    private void UpdateRangedAttackState(ref Vector3 acceleration)
+    {
+        switch (attackState)
+        {
+            case AttackState.Flocking:
+            {
+                if (cooldownTimer > 0f)
+                {
+                    cooldownTimer -= Time.deltaTime;
+                    break;
+                }
+
+                float dist = (manager.Target.position - cachedTransform.position).magnitude;
+                if (dist <= settings.attackTriggerDistance && manager.RequestAttack())
+                {
+                    // Start circle angle from current position relative to player so orbit begins smoothly
+                    Vector3 toSelf = cachedTransform.position - manager.Target.position;
+                    circleAngle = Mathf.Atan2(toSelf.z, toSelf.x) * Mathf.Rad2Deg;
+                    attackState = AttackState.Circling;
+                    attackStateTimer = settings.circleDuration;
+                }
+                break;
+            }
+
+            case AttackState.Circling:
+            {
+                // Orbit the player in the horizontal plane at a slight upward offset
+                circleAngle += settings.circleSpeed * Time.deltaTime;
+
+                float rad = circleAngle * Mathf.Deg2Rad;
+                Vector3 orbitOffset = new Vector3(
+                    Mathf.Cos(rad),
+                    0.5f,
+                    Mathf.Sin(rad)
+                ) * settings.circleRadius;
+
+                Vector3 orbitTarget = manager.Target.position + orbitOffset;
+                Vector3 toOrbit = orbitTarget - cachedTransform.position;
+
+                // Move quickly to keep up with the orbit position
+                velocity = toOrbit.normalized * settings.maxSpeed * 2.5f;
+
+                attackStateTimer -= Time.deltaTime;
+                if (attackStateTimer <= 0f)
+                {
+                    attackState = AttackState.Firing;
+                }
+                break;
+            }
+
+            case AttackState.Firing:
+            {
+                // Fire a projectile aimed at the player's current position
+                if (settings.projectilePrefab != null)
+                {
+                    Vector3 dir = (manager.Target.position - cachedTransform.position).normalized;
+                    GameObject proj = Instantiate(
+                        settings.projectilePrefab,
+                        cachedTransform.position,
+                        Quaternion.LookRotation(dir)
+                    );
+                    BoidProjectile bp = proj.GetComponent<BoidProjectile>();
+                    bp?.Initialize(dir, settings.projectileSpeed, settings.attackDamage);
+                }
+
+                manager.ReleaseAttack();
+                cooldownTimer = settings.attackCooldown;
+                attackState = AttackState.Flocking;
+                break;
+            }
         }
     }
 

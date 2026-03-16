@@ -50,4 +50,39 @@ public class BoidSettings : ScriptableObject
     public float engageAvoidanceRadius = -1f;
     public float targetKeepDistance = 3f;
     public float groupUpThreshold = 0.7f;
+
+    [Header("Combat")]
+    public float maxHealth = 100f;
+    public float attackDamage = 10f;
+    public float attackCooldown = 1.5f;
+    [Tooltip("Fraction of boids kept alive as a last stand until flock health hits 0")]
+    public float minSurvivorFraction = 0.35f;
+
+    [Header("Ranged Attack Behaviour")]
+    [Tooltip("Orbit radius around the player during the circle wind-up")]
+    public float circleRadius = 6f;
+    [Tooltip("How long the boid circles before firing (seconds)")]
+    public float circleDuration = 1.5f;
+    [Tooltip("Orbital speed during circle phase (degrees per second)")]
+    public float circleSpeed = 180f;
+    [Tooltip("Speed of the fired projectile")]
+    public float projectileSpeed = 15f;
+    [Tooltip("Prefab with BoidProjectile script, SphereCollider (trigger), and a mesh")]
+    public GameObject projectilePrefab;
+
+    [Header("Melee Attack Behaviour")]
+    [Tooltip("Distance at which a boid triggers its wind-up")]
+    public float attackTriggerDistance = 4f;
+    [Tooltip("How long the boid pulls back before charging (seconds)")]
+    public float attackWindUpDuration = 0.4f;
+    [Tooltip("How far back the boid flies during wind-up")]
+    public float attackWindUpDistance = 2f;
+    [Tooltip("How long the charge dash lasts (seconds)")]
+    public float attackChargeDuration = 0.25f;
+    [Tooltip("Speed of the charge dash")]
+    public float attackChargeSpeed = 20f;
+    [Tooltip("Distance at which the charge deals damage")]
+    public float attackContactDistance = 1.5f;
+    [Tooltip("Max boids from this flock that can be in WindUp or Charging at once")]
+    public int maxSimultaneousAttackers = 3;
 }

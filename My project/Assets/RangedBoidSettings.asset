@@ -42,3 +42,7 @@ MonoBehaviour:
   engageAvoidanceRadius: -1
   targetKeepDistance: 3
   groupUpThreshold: 0.7
+  maxHealth: 150
+  attackDamage: 10
+  attackCooldown: 1.5
+  minSurvivorFraction: 0.35
