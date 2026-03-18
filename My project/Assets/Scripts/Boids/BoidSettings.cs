@@ -58,17 +58,20 @@ public class BoidSettings : ScriptableObject
     [Tooltip("Fraction of boids kept alive as a last stand until flock health hits 0")]
     public float minSurvivorFraction = 0.35f;
 
-    [Header("Ranged Attack Behaviour")]
-    [Tooltip("Orbit radius around the player during the circle wind-up")]
-    public float circleRadius = 6f;
-    [Tooltip("How long the boid circles before firing (seconds)")]
-    public float circleDuration = 1.5f;
-    [Tooltip("Orbital speed during circle phase (degrees per second)")]
-    public float circleSpeed = 180f;
-    [Tooltip("Speed of the fired projectile")]
+    [Header("Ranged Attack (Flock Coordinated)")]
+    public float flockAttackTriggerDistance = 12f;
+    public float formationRingRadius = 5f;
+    public float formationDuration = 2.0f;
+    public float formationConvergeThreshold = 0.7f;
+    public float formationSlotTolerance = 1.5f;
+    public float formationApproachSpeed = 8f;
+    public float flockAttackCooldown = 5.0f;
+    public float flockProjectileDamage = 30f;
     public float projectileSpeed = 15f;
-    [Tooltip("Prefab with BoidProjectile script, SphereCollider (trigger), and a mesh")]
     public GameObject projectilePrefab;
+    public float projectileTurnSpeed = 5f;
+    public float formationOrbitSpeed = 90f;
+    public float formationKnockbackForce = 8f;
 
     [Header("Melee Attack Behaviour")]
     [Tooltip("Distance at which a boid triggers its wind-up")]
@@ -85,4 +88,11 @@ public class BoidSettings : ScriptableObject
     public float attackContactDistance = 1.5f;
     [Tooltip("Max boids from this flock that can be in WindUp or Charging at once")]
     public int maxSimultaneousAttackers = 3;
+
+    [Header("Melee Attack (Flock Coordinated)")]
+    public float meleeFlockTriggerDistance = 8f;
+    public float meleeFlockCooldown = 4f;
+    public float meleeRecoveryDuration = 0.5f;
+    public float meleeWindUpSteerWeight = 5f;    // how strongly boids steer away during wind-up
+    public float meleeChargeSteerWeight = 10f;   // how strongly boids steer toward charge target
 }

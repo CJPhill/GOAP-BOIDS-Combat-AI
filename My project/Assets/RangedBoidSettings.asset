@@ -27,7 +27,7 @@ MonoBehaviour:
   obstacleAvoidanceRadius: 1.5
   obstacleMask:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 0
   boundaryRadius: 15
   boundaryTurnStrength: 5
   flockSize: 50
@@ -46,3 +46,15 @@ MonoBehaviour:
   attackDamage: 10
   attackCooldown: 1.5
   minSurvivorFraction: 0.35
+  circleRadius: 6
+  circleDuration: 1.5
+  circleSpeed: 180
+  projectileSpeed: 15
+  projectilePrefab: {fileID: 7260620750771843444, guid: 64a36cd4dc0de7e4f9da246bc9553c3c, type: 3}
+  attackTriggerDistance: 4
+  attackWindUpDuration: 0.4
+  attackWindUpDistance: 2
+  attackChargeDuration: 0.25
+  attackChargeSpeed: 20
+  attackContactDistance: 1.5
+  maxSimultaneousAttackers: 3
