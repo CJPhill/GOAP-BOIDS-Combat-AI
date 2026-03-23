@@ -48,7 +48,7 @@ public class BoidSettings : ScriptableObject
     public float targetSeekWeight = 0f;
     public float engageBoundaryRadius = -1f;
     public float engageAvoidanceRadius = -1f;
-    public float targetKeepDistance = 3f;
+    public float targetKeepDistance = 5f;
     public float groupUpThreshold = 0.7f;
 
     [Header("Combat")]
@@ -78,12 +78,14 @@ public class BoidSettings : ScriptableObject
     public float attackTriggerDistance = 4f;
     [Tooltip("How long the boid pulls back before charging (seconds)")]
     public float attackWindUpDuration = 0.4f;
-    [Tooltip("How far back the boid flies during wind-up")]
+    [Tooltip("(Unused for melee — wind-up is now a hover)")]
     public float attackWindUpDistance = 2f;
     [Tooltip("How long the charge dash lasts (seconds)")]
     public float attackChargeDuration = 0.25f;
-    [Tooltip("Speed of the charge dash")]
+    [Tooltip("(Unused for melee — speed is arc-duration-based)")]
     public float attackChargeSpeed = 20f;
+    [Tooltip("Duration of the full infinity-arc sweep (seconds)")]
+    public float attackSweepDuration = 0.8f;
     [Tooltip("Distance at which the charge deals damage")]
     public float attackContactDistance = 1.5f;
     [Tooltip("Max boids from this flock that can be in WindUp or Charging at once")]

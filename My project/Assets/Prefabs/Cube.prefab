@@ -13,6 +13,9 @@ GameObject:
   - component: {fileID: 4149364293500020696}
   - component: {fileID: 11059669346124372}
   - component: {fileID: 8913525731853279268}
+  - component: {fileID: -8184133216955269568}
+  - component: {fileID: -6681361120443034989}
+  - component: {fileID: -8050510876946369855}
   m_Layer: 7
   m_Name: Cube
   m_TagString: Untagged
@@ -127,3 +130,65 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BoidAgent
   settings: {fileID: 0}
   manager: {fileID: 0}
+  goapBrain: {fileID: 0}
+  velocity: {x: 0, y: 0, z: 0}
+  cachedTransform: {fileID: 0}
+--- !u!114 &-8184133216955269568
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1458949725028823893}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1cef53d855ccf0b46bcf004b27c4a52a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: CrashKonijn.Agent.Runtime::CrashKonijn.Agent.Runtime.AgentBehaviour
+  <ActionProviderBase>k__BackingField: {fileID: -6681361120443034989}
+  <RunInUnityUpdate>k__BackingField: 1
+  isPaused: 0
+  <LoggerConfig>k__BackingField:
+    <DebugMode>k__BackingField: 1
+    <MaxLogSize>k__BackingField: 20
+--- !u!114 &-6681361120443034989
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1458949725028823893}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72344165e2cc41da93476bb1aa2cdd4b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: CrashKonijn.Goap.Runtime::CrashKonijn.Goap.Runtime.GoapActionProvider
+  <LoggerConfig>k__BackingField:
+    <DebugMode>k__BackingField: 1
+    <MaxLogSize>k__BackingField: 20
+  <AgentTypeBehaviour>k__BackingField: {fileID: 0}
+  <DistanceMultiplier>k__BackingField: 1
+--- !u!114 &-8050510876946369855
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1458949725028823893}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 810c4a669aebb364da33b64aeef5359d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BoidGoapBrain
+  cooldownTimer: 0
+  windUpComplete: 0
+  circleDone: 0
+  chargeDirection: {x: 0, y: 0, z: 0}
+  circleAngle: 0
+  windUpTimer: 0
+  circleTimer: 0
+  chargeTimer: 0
+  damageDealtThisCharge: 0
+  gotAttackSlot: 0
+  isGoapAttacking: 0
+  isMovementOverridden: 0

@@ -5,15 +5,24 @@ public class BoidAgent : MonoBehaviour, IEnemy
     [HideInInspector] public BoidSettings settings;
     [HideInInspector] public FlockManager manager;
 
-    private enum AttackState { Flocking, WindUp, Charging, Formation }
+    // Set by BoidGoapBrain.Awake(); null when GOAP package is not installed or component is absent.
+    [HideInInspector] public BoidGoapBrain goapBrain;
 
-    private Vector3 velocity;
-    private Transform cachedTransform;
+    private enum AttackState { Flocking, WindUp, InfinitySweep, Formation }
+
+    // Public so GOAP actions can set velocity directly when they own movement.
+    [HideInInspector] public Vector3 velocity;
+    [HideInInspector] public Transform cachedTransform;
     private AttackState attackState = AttackState.Flocking;
     private float attackStateTimer;
     private float cooldownTimer;
-    private Vector3 chargeDirection;
-    private bool damageDealtThisCharge;
+    // Infinity sweep state
+    private Vector3 infinityTipA;
+    private Vector3 infinityCenter;
+    private Vector3 infinityForward;
+    private Vector3 infinityRight;
+    private float   infinityR;
+    private float   infinitySweepTimer;
     private bool inFormation;
     private Vector3 formationTargetPos;
 
@@ -74,8 +83,12 @@ public class BoidAgent : MonoBehaviour, IEnemy
             }
         }
 
-        // Attack state machine — branched by flock type
-        if (manager.Target != null && manager.State == FlockManager.FlockState.Engaging && !manager.IsDead)
+        // Attack state machine (legacy FSM) — only runs when GOAP toggle is OFF.
+        // When GOAP is ON, GOAP actions drive velocity directly via BoidGoapBrain.
+        if (!GoapToggle.UseGoap
+            && manager.Target != null
+            && manager.State == FlockManager.FlockState.Engaging
+            && !manager.IsDead)
         {
             if (settings.flockType == FlockType.Melee)
                 UpdateMeleeAttackState(ref acceleration);
@@ -91,11 +104,10 @@ public class BoidAgent : MonoBehaviour, IEnemy
         {
             velocity += acceleration * Time.deltaTime;
 
-            // Clamp speed — use higher cap during melee charge
             float speed = velocity.magnitude;
             if (speed > 0f)
             {
-                float maxSpd = (attackState == AttackState.Charging) ? settings.attackChargeSpeed : settings.maxSpeed;
+                float maxSpd = settings.maxSpeed;
                 speed = Mathf.Clamp(speed, settings.minSpeed, maxSpd);
                 velocity = velocity.normalized * speed;
             }
@@ -109,10 +121,16 @@ public class BoidAgent : MonoBehaviour, IEnemy
         }
     }
 
-    public bool IsAttacking => attackState != AttackState.Flocking;
+    public bool IsAttacking =>
+        (GoapToggle.UseGoap && goapBrain != null && goapBrain.isGoapAttacking)
+        || (!GoapToggle.UseGoap && attackState != AttackState.Flocking);
 
-    // True only for states that fully override movement (ranged formation)
-    private bool IsMovementOverridden => attackState == AttackState.Formation;
+    // True for states that fully override movement (both legacy FSM and GOAP paths).
+    private bool IsMovementOverridden =>
+        attackState == AttackState.Formation
+        || attackState == AttackState.InfinitySweep
+        || attackState == AttackState.WindUp
+        || (GoapToggle.UseGoap && goapBrain != null && goapBrain.isMovementOverridden);
 
     public void SetFormationTarget(Vector3 worldPos, bool active)
     {
@@ -129,11 +147,11 @@ public class BoidAgent : MonoBehaviour, IEnemy
         attackState = AttackState.WindUp;
     }
 
-    public void BeginMeleeCharge()
+    public void BeginInfinitySweep()
     {
-        chargeDirection = (manager.Target.position - cachedTransform.position).normalized;
-        damageDealtThisCharge = false;
-        attackState = AttackState.Charging;
+        SetupInfinityPath();
+        infinitySweepTimer = 0f;
+        attackState = AttackState.InfinitySweep;
     }
 
     public void EndMeleeAttack()
@@ -146,14 +164,15 @@ public class BoidAgent : MonoBehaviour, IEnemy
         switch (attackState)
         {
             case AttackState.WindUp:
-            {
-                Vector3 awayDir = (cachedTransform.position - manager.Target.position).normalized;
-                acceleration += SteerTowards(awayDir) * settings.meleeWindUpSteerWeight;
+                velocity = Vector3.zero;
                 break;
-            }
-            case AttackState.Charging:
+
+            case AttackState.InfinitySweep:
             {
-                acceleration += SteerTowards(chargeDirection) * settings.meleeChargeSteerWeight;
+                float t = Mathf.Clamp01(infinitySweepTimer / settings.attackSweepDuration);
+                Vector3 targetPos = EvaluateInfinityPath(t);
+                velocity = (targetPos - cachedTransform.position) / Time.deltaTime;
+                infinitySweepTimer += Time.deltaTime;
                 break;
             }
         }
@@ -189,6 +208,41 @@ public class BoidAgent : MonoBehaviour, IEnemy
     public void ApplyKnockback(Vector3 impulse)
     {
         velocity += impulse;
+    }
+
+    private void SetupInfinityPath()
+    {
+        infinityTipA   = cachedTransform.position;
+        infinityCenter = manager.Target.position;
+
+        Vector3 toCenter = infinityCenter - infinityTipA;
+        float D = toCenter.magnitude;
+        if (D < 0.01f) { infinityForward = cachedTransform.forward; D = 2f; }
+        else             infinityForward = toCenter.normalized;
+
+        infinityRight = Mathf.Abs(Vector3.Dot(infinityForward, Vector3.up)) > 0.99f
+            ? Vector3.Cross(infinityForward, Vector3.right).normalized
+            : Vector3.Cross(Vector3.up, infinityForward).normalized;
+
+        infinityR = D * 0.5f;
+    }
+
+    private Vector3 EvaluateInfinityPath(float t)
+    {
+        if (t <= 0.5f)
+        {
+            float angle = t * 2f * Mathf.PI;
+            Vector3 c1 = infinityTipA + infinityForward * infinityR;
+            return c1 + infinityR * (-infinityForward * Mathf.Cos(angle)
+                                     + infinityRight   * Mathf.Sin(angle));
+        }
+        else
+        {
+            float angle = (t - 0.5f) * 2f * Mathf.PI;
+            Vector3 c2 = infinityCenter + infinityForward * infinityR;
+            return c2 + infinityR * (-infinityForward * Mathf.Cos(angle)
+                                     - infinityRight   * Mathf.Sin(angle));
+        }
     }
 
     private Vector3 SteerTowards(Vector3 direction)

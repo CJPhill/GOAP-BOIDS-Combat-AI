@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CrashKonijn.Goap.Runtime;
 using UnityEngine;
 
 public class FlockManager : MonoBehaviour
@@ -124,6 +125,12 @@ public class FlockManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Read-only slot check used by GOAP sensors.
+    /// Does NOT consume a slot — call RequestAttack() in the action's Start() to do that.
+    /// </summary>
+    public bool CanAttack => currentAttackerCount < settings.maxSimultaneousAttackers;
+
     public bool RequestAttack()
     {
         if (currentAttackerCount >= settings.maxSimultaneousAttackers)
@@ -211,11 +218,14 @@ public class FlockManager : MonoBehaviour
             return; // Don't advance while grouping
         }
 
-        // Flock-level attacks
-        if (settings.flockType == FlockType.Ranged)
-            UpdateRangedFlockAttack();
-        if (settings.flockType == FlockType.Melee)
-            UpdateMeleeFlockAttack();
+        // Flock-level attacks — disabled when GOAP is on (per-boid GOAP actions handle combat instead).
+        if (!GoapToggle.UseGoap)
+        {
+            if (settings.flockType == FlockType.Ranged)
+                UpdateRangedFlockAttack();
+            if (settings.flockType == FlockType.Melee)
+                UpdateMeleeFlockAttack();
+        }
 
         // Engaging — move toward target (existing arrival behavior)
         Vector3 direction = target.position - transform.position;
@@ -243,6 +253,9 @@ public class FlockManager : MonoBehaviour
 
     private void SpawnFlock()
     {
+        // Cache the GOAP behaviour lookup once, outside the per-boid loop.
+        var goapBehaviour = FindFirstObjectByType<GoapBehaviour>();
+
         for (int i = 0; i < settings.flockSize; i++)
         {
             Vector3 spawnPos = transform.position + Random.insideUnitSphere * settings.spawnRadius;
@@ -254,6 +267,17 @@ public class FlockManager : MonoBehaviour
             agent.manager = this;
             agent.Initialize(startVelocity);
             ApplyFlockColor(agent);
+
+            // Phase 11 — GOAP agent-type wiring.
+            if (goapBehaviour != null)
+            {
+                var provider = agent.GetComponent<GoapActionProvider>();
+                if (provider != null)
+                {
+                    string agentTypeName = settings.flockType == FlockType.Melee ? "MeleeBoid" : "RangedBoid";
+                    provider.AgentType = goapBehaviour.GetAgentType(agentTypeName);
+                }
+            }
 
             boids.Add(agent);
         }
@@ -572,9 +596,9 @@ public class FlockManager : MonoBehaviour
                 if (meleePhaseTimer <= 0f)
                 {
                     meleePhase = MeleeAttackPhase.Charging;
-                    meleePhaseTimer = settings.attackChargeDuration;
+                    meleePhaseTimer = settings.attackSweepDuration;
                     for (int i = 0; i < boids.Count; i++)
-                        boids[i].BeginMeleeCharge();
+                        boids[i].BeginInfinitySweep();
                 }
                 break;
             }

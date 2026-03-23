@@ -27,13 +27,13 @@ MonoBehaviour:
   obstacleAvoidanceRadius: 1.5
   obstacleMask:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 0
   boundaryRadius: 15
   boundaryTurnStrength: 5
   flockSize: 50
   spawnRadius: 5
   targetFollowSpeed: 3
-  targetStopDistance: 2
+  targetStopDistance: 4
   targetSlowDistance: 8
   aggroRadius: 15
   aggroTag: Player
@@ -46,3 +46,29 @@ MonoBehaviour:
   attackDamage: 10
   attackCooldown: 1.5
   minSurvivorFraction: 0.35
+  flockAttackTriggerDistance: 12
+  formationRingRadius: 5
+  formationDuration: 2
+  formationConvergeThreshold: 0.7
+  formationSlotTolerance: 1.5
+  formationApproachSpeed: 8
+  flockAttackCooldown: 5
+  flockProjectileDamage: 30
+  projectileSpeed: 15
+  projectilePrefab: {fileID: 0}
+  projectileTurnSpeed: 5
+  formationOrbitSpeed: 90
+  formationKnockbackForce: 8
+  attackTriggerDistance: 4
+  attackWindUpDuration: 0.4
+  attackWindUpDistance: 2
+  attackChargeDuration: 0.25
+  attackChargeSpeed: 20
+  attackSweepDuration: 0.8
+  attackContactDistance: 1.5
+  maxSimultaneousAttackers: 3
+  meleeFlockTriggerDistance: 8
+  meleeFlockCooldown: 4
+  meleeRecoveryDuration: 0.5
+  meleeWindUpSteerWeight: 5
+  meleeChargeSteerWeight: 10
