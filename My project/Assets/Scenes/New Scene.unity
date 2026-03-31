@@ -467,7 +467,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &690493987
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -575,7 +575,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6941686dacb12d44cb3f79595327cfa6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GoapToggle
-  useGoap: 1
+  useGoap: 0
 --- !u!4 &973697511
 Transform:
   m_ObjectHideFlags: 0
@@ -1184,6 +1184,7 @@ GameObject:
   - component: {fileID: 2035265742}
   - component: {fileID: 2035265741}
   - component: {fileID: 2035265740}
+  - component: {fileID: 2035265745}
   m_Layer: 0
   m_Name: GoapManager
   m_TagString: Untagged
@@ -1243,6 +1244,7 @@ MonoBehaviour:
   agentTypeConfigFactories:
   - {fileID: 2035265741}
   - {fileID: 2035265740}
+  - {fileID: 2035265745}
 --- !u!4 &2035265744
 Transform:
   m_ObjectHideFlags: 0
@@ -1258,6 +1260,18 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2035265745
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2035265739}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1b5fa6217eb7cd54cbbb4918c93e18b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PureGOAPAgentTypeFactory
 --- !u!1 &2076855874
 GameObject:
   m_ObjectHideFlags: 0
@@ -1274,7 +1288,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2076855875
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1305,6 +1319,60 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2147090430
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2147090432}
+  - component: {fileID: 2147090431}
+  m_Layer: 0
+  m_Name: ConditionManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2147090431
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147090430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b79ab7f3a52e7d4096634e060ad0003, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ConditionManager
+  CurrentCondition: 0
+  agentCount: 10
+  spawnRadius: 15
+  pureGOAPAgentPrefab: {fileID: 1458949725028823893, guid: 33bdf70a0a34d03488a0e02684ab8b45, type: 3}
+  pureBOIDSAgentPrefab: {fileID: 0}
+  boidsWithGOAPLeaderPrefab: {fileID: 0}
+  goapWithBOIDSMovementPrefab: {fileID: 0}
+  spawnedAgents: []
+  goapBehaviour: {fileID: 2035265743}
+  playerTransform: {fileID: 0}
+--- !u!4 &2147090432
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147090430}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1321,3 +1389,4 @@ SceneRoots:
   - {fileID: 49173742}
   - {fileID: 2035265744}
   - {fileID: 973697511}
+  - {fileID: 2147090432}

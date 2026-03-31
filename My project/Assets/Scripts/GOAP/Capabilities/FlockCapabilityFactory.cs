@@ -13,10 +13,10 @@ public class FlockCapabilityFactory : CapabilityFactoryBase
 
         builder.AddGoal<FlockGoal>()
             .SetBaseCost(10)
-            .AddCondition<AttackComplete>(Comparison.GreaterThanOrEqual, 1);
+            .AddCondition<IsFlocking>(Comparison.GreaterThanOrEqual, 1);
 
         builder.AddAction<FlockAction>()
-            .AddEffect<AttackComplete>(EffectType.Increase)
+            .AddEffect<IsFlocking>(EffectType.Increase)
             .SetRequiresTarget(false);
 
         return builder.Build();

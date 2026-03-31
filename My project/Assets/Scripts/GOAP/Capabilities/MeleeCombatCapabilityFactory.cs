@@ -15,7 +15,7 @@ public class MeleeCombatCapabilityFactory : CapabilityFactoryBase
 
         builder.AddGoal<MeleeAttackGoal>()
             .SetBaseCost(1)
-            .AddCondition<AttackComplete>(Comparison.GreaterThanOrEqual, 1);
+            .AddCondition<MeleeAttackDone>(Comparison.GreaterThanOrEqual, 1);
 
         builder.AddAction<WindUpAction>()
             .SetBaseCost(1)
@@ -28,7 +28,7 @@ public class MeleeCombatCapabilityFactory : CapabilityFactoryBase
         builder.AddAction<ChargeAction>()
             .SetBaseCost(1)
             .AddCondition<WindUpDone>(Comparison.GreaterThanOrEqual, 1)
-            .AddEffect<AttackComplete>(EffectType.Increase)
+            .AddEffect<MeleeAttackDone>(EffectType.Increase)
             .SetRequiresTarget(false);
 
         builder.AddWorldSensor<AttackRangeSensor>()

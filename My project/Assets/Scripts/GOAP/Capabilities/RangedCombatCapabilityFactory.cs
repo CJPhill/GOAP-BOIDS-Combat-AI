@@ -15,7 +15,7 @@ public class RangedCombatCapabilityFactory : CapabilityFactoryBase
 
         builder.AddGoal<RangedAttackGoal>()
             .SetBaseCost(1)
-            .AddCondition<AttackComplete>(Comparison.GreaterThanOrEqual, 1);
+            .AddCondition<RangedAttackDone>(Comparison.GreaterThanOrEqual, 1);
 
         builder.AddAction<CircleAction>()
             .SetBaseCost(1)
@@ -28,7 +28,7 @@ public class RangedCombatCapabilityFactory : CapabilityFactoryBase
         builder.AddAction<FireAction>()
             .SetBaseCost(1)
             .AddCondition<CircleDone>(Comparison.GreaterThanOrEqual, 1)
-            .AddEffect<AttackComplete>(EffectType.Increase)
+            .AddEffect<RangedAttackDone>(EffectType.Increase)
             .SetRequiresTarget(false);
 
         builder.AddWorldSensor<AttackRangeSensor>()
