@@ -1,3 +1,4 @@
+using CrashKonijn.Agent.Core;
 using CrashKonijn.Goap.Core;
 using CrashKonijn.Goap.Runtime;
 
@@ -21,6 +22,7 @@ public class PureFleeCapabilityFactory : CapabilityFactoryBase
         builder.AddAction<PureFleeAction>()
             .SetBaseCost(1)
             .SetTarget<PlayerTarget>()
+            .SetMoveMode(ActionMoveMode.PerformWhileMoving)
             .AddCondition<IsHealthLow>(Comparison.GreaterThanOrEqual, 1)
             .AddEffect<FleeDone>(EffectType.Increase);
 

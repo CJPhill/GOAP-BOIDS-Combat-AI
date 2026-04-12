@@ -9,7 +9,7 @@ using UnityEngine.Profiling;
 /// Movement: Direct steering toward GOAP action targets with 3D swimming/bobbing
 /// Planning: Individual GOAP brain per agent
 /// Obstacle Avoidance: SphereCast-based (same as BOIDS system)
-/// Swarm: Soft cohesion + separation forces toward/from nearby allies
+/// Swarm: Separation force to prevent overlap (cohesion lives in PureSwarmMoveAction)
 /// Bounds: Stays within RoomBounds if present in scene
 /// Target: Player (detected via VisionSensor)
 ///
@@ -24,6 +24,12 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     // Static registry of all living agents (for swarm forces and sensors)
     public static readonly List<PureGOAPAgent> AllAgents = new List<PureGOAPAgent>();
 
+    // Swarm-wide attack cooldown — only one attack per swarm pass
+    public static float SwarmAttackCooldown;
+    [Header("Swarm Attack")]
+    [SerializeField] private float swarmCooldownDuration = 3f;
+    public float SwarmCooldownDuration => swarmCooldownDuration;
+
     [Header("Movement Settings")]
     [SerializeField] private float maxSpeed = 8f;
     [SerializeField] private float minSpeed = 2f;
@@ -32,7 +38,6 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
 
     [Header("Obstacle Avoidance")]
     [SerializeField] private float obstacleAvoidanceRadius = 1.5f;
-    [SerializeField] private float obstacleAvoidanceWeight = 10f;
     [SerializeField] private float perceptionRadius = 10f;
     [SerializeField] private LayerMask obstacleMask;
 
@@ -41,19 +46,24 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     [SerializeField] private float attackDamage = 10f;
     [SerializeField] private float attackRange = 5f;
     [SerializeField] private float attackCooldown = 2f;
+    [SerializeField] private AttackType attackType = AttackType.Melee;
+    [SerializeField] private GameObject projectilePrefab;
 
-    [Header("Swarm Cohesion")]
-    [SerializeField] private float cohesionRadius = 15f;
-    [SerializeField] private float cohesionWeight = 1.5f;
-    [SerializeField] private float separationRadius = 3f;
+    [Header("Swarm Separation")]
+    [SerializeField] private float separationRadius = 4f;
     [SerializeField] private float separationWeight = 3f;
 
     [Header("Room Bounds")]
     [SerializeField] private float boundaryMargin = 10f;
 
     [Header("Swimming/Bobbing")]
-    [SerializeField] private float bobAmplitude = 0.3f;
-    [SerializeField] private float bobFrequency = 1.5f;
+    [SerializeField] private float bobAmplitude = 1.5f;
+    [SerializeField] private float bobFrequency = 1.2f;
+    [SerializeField] private float weaveAmplitude = 1.2f;
+    [SerializeField] private float weaveFrequency = 0.8f;
+
+    [Header("Appearance")]
+    [SerializeField] private Color agentColor = Color.green;
 
     [Header("Debug")]
     [SerializeField] private bool drawDebug = false;
@@ -68,6 +78,8 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     private bool isDead;
     private RoomBounds roomBounds;
     private float bobPhaseOffset;
+    private float weavePhaseOffset;
+    private Rigidbody rb;
 
     // IEnemy interface
     public bool IsDead => isDead;
@@ -79,14 +91,32 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     public float AttackRange => attackRange;
     public float AttackDamage => attackDamage;
     public float AttackCooldown => attackCooldown;
+    public AttackType AgentAttackType => attackType;
+    public GameObject ProjectilePrefab => projectilePrefab;
+    public void SetAttackType(AttackType type) { attackType = type; }
 
     private void Awake()
     {
         cachedTransform = transform;
+        rb = GetComponent<Rigidbody>();
+        rb.useGravity = false;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
         currentHealth = maxHealth;
         velocity = cachedTransform.forward * maxSpeed * 0.5f;
         roomBounds = RoomBounds.Instance;
         bobPhaseOffset = Random.Range(0f, Mathf.PI * 2f);
+        weavePhaseOffset = Random.Range(0f, Mathf.PI * 2f);
+
+        // Set agent color
+        Renderer rend = GetComponentInChildren<Renderer>();
+        if (rend != null)
+        {
+            MaterialPropertyBlock mpb = new MaterialPropertyBlock();
+            rend.GetPropertyBlock(mpb);
+            mpb.SetColor("_Color", agentColor);
+            rend.SetPropertyBlock(mpb);
+        }
     }
 
     private void OnEnable()
@@ -103,42 +133,41 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     {
         Profiler.BeginSample("PureGOAPAgent.Update");
 
-        // Tick cooldown
+        // Tick cooldowns
         if (cooldownTimer > 0f)
             cooldownTimer -= Time.deltaTime;
+        if (SwarmAttackCooldown > 0f)
+            SwarmAttackCooldown -= Time.deltaTime;
 
         // GOAP actions set velocity via SteerToward/SetVelocity.
-        // Here we layer on environmental forces.
+        // Here we layer on environmental forces (always active).
 
         // Obstacle avoidance
-        Vector3 obstacleAvoidance = ComputeObstacleAvoidance();
-        velocity += obstacleAvoidance * Time.deltaTime;
+        Vector3 avoidDir = ComputeObstacleAvoidance();
+        if (avoidDir.sqrMagnitude > 0.001f)
+        {
+            float currentSpeed = velocity.magnitude;
+            velocity = avoidDir.normalized * currentSpeed;
+        }
 
-        // Swarm cohesion + separation
+        // Separation (always on — collision avoidance between agents)
         Vector3 swarmForce = ComputeSwarmForces();
         velocity += swarmForce * Time.deltaTime;
 
-        // Room boundary steering
+        // Boundary containment
         if (roomBounds != null)
         {
             Vector3 boundaryForce = roomBounds.GetBoundarySteeringForce(cachedTransform.position, boundaryMargin);
             velocity += boundaryForce * Time.deltaTime;
         }
 
-        // Clamp velocity
+        // Clamp speed
         float speed = velocity.magnitude;
-        if (speed > 0f)
+        if (speed > 0.01f)
         {
             speed = Mathf.Clamp(speed, minSpeed, maxSpeed);
             velocity = velocity.normalized * speed;
         }
-
-        // Move
-        cachedTransform.position += velocity * Time.deltaTime;
-
-        // Swimming bob (sine-wave vertical oscillation)
-        float bob = Mathf.Sin((Time.time + bobPhaseOffset) * bobFrequency * Mathf.PI * 2f) * bobAmplitude;
-        cachedTransform.position += Vector3.up * bob * Time.deltaTime;
 
         // Orient toward velocity
         if (velocity.sqrMagnitude > 0.001f)
@@ -152,6 +181,21 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
         }
 
         Profiler.EndSample();
+    }
+
+    private void FixedUpdate()
+    {
+        // Vertical bob (up/down sine wave)
+        float bob = Mathf.Sin((Time.fixedTime + bobPhaseOffset) * bobFrequency * Mathf.PI * 2f) * bobAmplitude;
+
+        // Horizontal weave (side-to-side perpendicular to movement direction)
+        float weave = Mathf.Sin((Time.fixedTime + weavePhaseOffset) * weaveFrequency * Mathf.PI * 2f) * weaveAmplitude;
+        Vector3 right = Vector3.Cross(Vector3.up, velocity.normalized);
+        if (right.sqrMagnitude < 0.001f)
+            right = cachedTransform.right;
+
+        // Set Rigidbody velocity — physics handles collisions, interpolation handles smoothness
+        rb.linearVelocity = velocity + Vector3.up * bob + right * weave;
     }
 
     /// <summary>
@@ -175,31 +219,8 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
     }
 
     /// <summary>
-    /// Returns true if this agent has fewer than minNeighbors within the given radius.
-    /// Used by IsolationSensor and PureGOAPBrain for GroupUp goal.
-    /// </summary>
-    public bool IsIsolated(float radius, int minNeighbors)
-    {
-        int count = 0;
-        Vector3 pos = cachedTransform.position;
-        float radiusSq = radius * radius;
-
-        for (int i = 0; i < AllAgents.Count; i++)
-        {
-            if (AllAgents[i] == this) continue;
-            if ((AllAgents[i].Position - pos).sqrMagnitude <= radiusSq)
-            {
-                count++;
-                if (count >= minNeighbors)
-                    return false;
-            }
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Soft cohesion and separation forces toward/from nearby allies.
-    /// Always-on swarm behavior layered on top of GOAP action steering.
+    /// Separation force to prevent agents from overlapping.
+    /// Cohesion is handled by PureSwarmMoveAction — this is just collision avoidance.
     /// </summary>
     private Vector3 ComputeSwarmForces()
     {
@@ -208,11 +229,8 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
 
         Profiler.BeginSample("PureGOAPAgent.SwarmForces");
 
-        Vector3 cohesionCenter = Vector3.zero;
         Vector3 separationForce = Vector3.zero;
-        int cohesionCount = 0;
         Vector3 myPos = cachedTransform.position;
-        float cohesionRadiusSq = cohesionRadius * cohesionRadius;
         float separationRadiusSq = separationRadius * separationRadius;
 
         for (int i = 0; i < AllAgents.Count; i++)
@@ -222,29 +240,13 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
             Vector3 offset = AllAgents[i].Position - myPos;
             float distSq = offset.sqrMagnitude;
 
-            // Cohesion: drift toward average neighbor position
-            if (distSq <= cohesionRadiusSq)
-            {
-                cohesionCenter += AllAgents[i].Position;
-                cohesionCount++;
-            }
-
-            // Separation: push away from very close neighbors
             if (distSq <= separationRadiusSq && distSq > 0.001f)
             {
                 separationForce -= offset.normalized / Mathf.Sqrt(distSq);
             }
         }
 
-        Vector3 result = Vector3.zero;
-
-        if (cohesionCount > 0)
-        {
-            cohesionCenter /= cohesionCount;
-            result += SteerTowards(cohesionCenter - myPos) * cohesionWeight;
-        }
-
-        result += separationForce.normalized * separationWeight;
+        Vector3 result = separationForce.normalized * separationWeight;
 
         Profiler.EndSample();
         return result;
@@ -261,43 +263,33 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
 
         Profiler.BeginSample("PureGOAPAgent.ObstacleAvoidance");
 
-        Vector3 forward = cachedTransform.forward;
+        Vector3 moveDir = velocity.normalized;
+        if (moveDir.sqrMagnitude < 0.001f)
+            moveDir = cachedTransform.forward;
 
-        // Check if there's an obstacle ahead
-        if (!Physics.SphereCast(cachedTransform.position, obstacleAvoidanceRadius, forward,
+        if (!Physics.SphereCast(cachedTransform.position, obstacleAvoidanceRadius, moveDir,
                 out RaycastHit hit, perceptionRadius, obstacleMask))
         {
             Profiler.EndSample();
             return Vector3.zero;
         }
 
-        // Find the first unobstructed direction
         Vector3[] dirs = BoidHelper.Directions;
+        Quaternion velRot = Quaternion.LookRotation(moveDir);
         for (int i = 0; i < dirs.Length; i++)
         {
-            Vector3 worldDir = cachedTransform.TransformDirection(dirs[i]);
+            Vector3 worldDir = velRot * dirs[i];
             if (!Physics.SphereCast(cachedTransform.position, obstacleAvoidanceRadius, worldDir,
                     out RaycastHit _, perceptionRadius, obstacleMask))
             {
-                Vector3 steer = SteerTowards(worldDir) * obstacleAvoidanceWeight;
                 Profiler.EndSample();
-                return steer;
+                return worldDir;
             }
         }
 
-        // All directions blocked — steer away from the hit
-        Vector3 result = SteerTowards(-hit.normal) * obstacleAvoidanceWeight;
+        Vector3 result = hit.normal;
         Profiler.EndSample();
         return result;
-    }
-
-    private Vector3 SteerTowards(Vector3 direction)
-    {
-        if (direction.sqrMagnitude < 0.001f)
-            return Vector3.zero;
-
-        Vector3 steer = direction.normalized * maxSpeed - velocity;
-        return Vector3.ClampMagnitude(steer, maxSteerForce);
     }
 
     // IEnemy interface implementation
@@ -321,13 +313,9 @@ public class PureGOAPAgent : MonoBehaviour, IEnemy
         Gizmos.color = Color.green;
         Gizmos.DrawLine(cachedTransform.position, cachedTransform.position + velocity);
 
-        // Draw perception radius
+        // Draw separation radius
         Gizmos.color = new Color(1f, 1f, 0f, 0.3f);
-        Gizmos.DrawWireSphere(cachedTransform.position, perceptionRadius);
-
-        // Draw cohesion radius
-        Gizmos.color = new Color(0f, 0.5f, 1f, 0.15f);
-        Gizmos.DrawWireSphere(cachedTransform.position, cohesionRadius);
+        Gizmos.DrawWireSphere(cachedTransform.position, separationRadius);
 
         // Draw attack range
         if (targetPlayer != null)

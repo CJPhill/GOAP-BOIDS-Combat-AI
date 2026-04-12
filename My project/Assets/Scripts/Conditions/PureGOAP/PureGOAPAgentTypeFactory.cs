@@ -17,7 +17,7 @@ public class PureGOAPAgentTypeFactory : AgentTypeFactoryBase
 
         builder.AddCapability<PureFleeCapabilityFactory>();
         builder.AddCapability<PureCombatCapabilityFactory>();
-        builder.AddCapability<PureGroupUpCapabilityFactory>();
+        builder.AddCapability<PureRangedCombatCapabilityFactory>();
         builder.AddCapability<PureWanderCapabilityFactory>();
 
         return builder.Build();

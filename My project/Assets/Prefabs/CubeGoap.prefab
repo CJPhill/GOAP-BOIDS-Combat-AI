@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: -6681361120443034989}
   - component: {fileID: 7217437843990559675}
   - component: {fileID: 6623445041730100818}
+  - component: {fileID: -5110995791483286748}
   m_Layer: 7
   m_Name: CubeGoap
   m_TagString: Untagged
@@ -163,12 +164,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 510e4366a13aaea4db97b254f344beab, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PureGOAPAgent
+  swarmCooldownDuration: 3
   maxSpeed: 8
   minSpeed: 2
   maxSteerForce: 5
   rotationSpeed: 5
   obstacleAvoidanceRadius: 1.5
-  obstacleAvoidanceWeight: 10
   perceptionRadius: 10
   obstacleMask:
     serializedVersion: 2
@@ -177,7 +178,17 @@ MonoBehaviour:
   attackDamage: 10
   attackRange: 5
   attackCooldown: 2
-  drawDebug: 0
+  attackType: 0
+  projectilePrefab: {fileID: 7260620750771843444, guid: 64a36cd4dc0de7e4f9da246bc9553c3c, type: 3}
+  separationRadius: 3
+  separationWeight: 3
+  boundaryMargin: 10
+  bobAmplitude: 0.3
+  bobFrequency: 1.5
+  weaveAmplitude: 0.4
+  weaveFrequency: 1
+  agentColor: {r: 0, g: 1, b: 0, a: 1}
+  drawDebug: 1
   velocity: {x: 0, y: 0, z: 0}
   cachedTransform: {fileID: 0}
   cooldownTimer: 0
@@ -194,3 +205,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 38f95b49a20836a4a8f496f76be57716, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PureGOAPBrain
+  playerDetectionRange: 30
+  playerTag: Player
+--- !u!54 &-5110995791483286748
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1458949725028823893}
+  serializedVersion: 5
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 0
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
