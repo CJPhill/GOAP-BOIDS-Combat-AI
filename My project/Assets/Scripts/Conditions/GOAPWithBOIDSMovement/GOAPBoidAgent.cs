@@ -65,6 +65,7 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     [HideInInspector] public Transform cachedTransform;
     [HideInInspector] public float cooldownTimer;
     [HideInInspector] public Transform targetPlayer;
+    [HideInInspector] public bool isScattering;
 
     private float currentHealth;
     private bool isDead;
@@ -235,18 +236,22 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
 
         if (neighborCount > 0)
         {
-            // Separation
+            // Separation always active
             result += separationForce.normalized * separationWeight;
 
-            // Alignment: steer toward average neighbor velocity
-            avgVelocity /= neighborCount;
-            Vector3 alignSteer = (avgVelocity - velocity).normalized;
-            result += alignSteer * alignmentWeight;
+            // Skip alignment + cohesion during scatter (chaotic dispersal)
+            if (!isScattering)
+            {
+                // Alignment: steer toward average neighbor velocity
+                avgVelocity /= neighborCount;
+                Vector3 alignSteer = (avgVelocity - velocity).normalized;
+                result += alignSteer * alignmentWeight;
 
-            // Cohesion: steer toward neighbor centroid
-            centroid /= neighborCount;
-            Vector3 cohesionSteer = (centroid - myPos).normalized;
-            result += cohesionSteer * cohesionWeight;
+                // Cohesion: steer toward neighbor centroid
+                centroid /= neighborCount;
+                Vector3 cohesionSteer = (centroid - myPos).normalized;
+                result += cohesionSteer * cohesionWeight;
+            }
         }
 
         Profiler.EndSample();

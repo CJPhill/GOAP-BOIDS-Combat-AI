@@ -52,14 +52,46 @@ public class LeaderGoapBrain : MonoBehaviour
             playerNearby = dist <= playerDetectionRange;
         }
 
-        // Goal priority: Flee > Attack > Wander
-        if (playerNearby && boid.manager.HealthPercent < 0.3f)
+        // Goal priority: Scatter > Flee > Attack/Kite > Regroup > Flank > Guard > Wander
+        float healthPercent = boid.manager.HealthPercent;
+        float criticalThreshold = boid.settings != null ? boid.settings.criticalHealthThreshold : 0.15f;
+        bool cooldownReady = brain == null || brain.cooldownTimer <= 0f;
+        bool isRanged = boid.settings != null && boid.settings.flockType == FlockType.Ranged;
+        float playerDist = playerTransform != null
+            ? Vector3.Distance(transform.position, playerTransform.position)
+            : float.MaxValue;
+        float guardInner = boid.settings != null ? boid.settings.guardInnerRange : 15f;
+        float guardOuter = boid.settings != null ? boid.settings.guardOuterRange : 30f;
+        float kiteMin = boid.settings != null ? boid.settings.kiteMinDistance : 8f;
+        float isolationThreshold = boid.settings != null ? boid.settings.isolationThreshold : 20f;
+
+        if (playerNearby && healthPercent < criticalThreshold)
+        {
+            provider.RequestGoal<LeaderScatterGoal>();
+        }
+        else if (playerNearby && healthPercent < 0.3f)
         {
             provider.RequestGoal<LeaderFleeGoal>();
         }
-        else if (playerNearby && (brain == null || brain.cooldownTimer <= 0f))
+        else if (playerNearby && cooldownReady)
         {
-            provider.RequestGoal<LeaderAttackGoal>();
+            // Ranged leaders kite when player is too close, otherwise normal attack
+            if (isRanged && playerDist < kiteMin)
+                provider.RequestGoal<LeaderKiteGoal>();
+            else
+                provider.RequestGoal<LeaderAttackGoal>();
+        }
+        else if (boid.manager != null && Vector3.Distance(transform.position, boid.manager.GetFlockCenter()) > isolationThreshold)
+        {
+            provider.RequestGoal<LeaderRegroupGoal>();
+        }
+        else if (playerNearby && boid.manager.BoidCount >= 3 && !cooldownReady)
+        {
+            provider.RequestGoal<LeaderFlankGoal>();
+        }
+        else if (playerDist >= guardInner && playerDist <= guardOuter)
+        {
+            provider.RequestGoal<LeaderGuardGoal>();
         }
         else
         {

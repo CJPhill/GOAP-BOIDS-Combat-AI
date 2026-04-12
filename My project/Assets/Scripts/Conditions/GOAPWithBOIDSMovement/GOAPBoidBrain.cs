@@ -41,16 +41,54 @@ public class GOAPBoidBrain : MonoBehaviour
             playerNearby = dist <= playerDetectionRange;
         }
 
-        if (playerNearby && agent.HealthPercent < 0.3f)
+        // Goal priority: Scatter > Flee > Attack/Kite > Regroup > Flank > Guard > Wander
+        float healthPercent = agent.HealthPercent;
+        bool cooldownReady = agent.cooldownTimer <= 0f && GOAPBoidAgent.SwarmAttackCooldown <= 0f;
+        bool isRanged = agent.AgentAttackType == AttackType.Ranged;
+        float playerDist = playerTransform != null
+            ? Vector3.Distance(transform.position, playerTransform.position)
+            : float.MaxValue;
+
+        // Check isolation from swarm centroid
+        bool isIsolated = false;
+        if (GOAPBoidAgent.AllAgents.Count > 1)
+        {
+            Vector3 centroid = Vector3.zero;
+            for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
+                centroid += GOAPBoidAgent.AllAgents[i].Position;
+            centroid /= GOAPBoidAgent.AllAgents.Count;
+            isIsolated = Vector3.Distance(transform.position, centroid) > 20f;
+        }
+
+        if (playerNearby && healthPercent < 0.15f)
+        {
+            provider.RequestGoal<ScatterGoal>();
+        }
+        else if (playerNearby && healthPercent < 0.3f)
         {
             provider.RequestGoal<PureFleeGoal>();
         }
-        else if (playerNearby && agent.cooldownTimer <= 0f && GOAPBoidAgent.SwarmAttackCooldown <= 0f)
+        else if (playerNearby && cooldownReady)
         {
-            if (agent.AgentAttackType == AttackType.Ranged)
+            // Ranged agents kite when player is too close
+            if (isRanged && playerDist < 8f)
+                provider.RequestGoal<KiteGoal>();
+            else if (isRanged)
                 provider.RequestGoal<PureRangedAttackGoal>();
             else
                 provider.RequestGoal<PureAttackGoal>();
+        }
+        else if (isIsolated)
+        {
+            provider.RequestGoal<RegroupGoal>();
+        }
+        else if (playerNearby && GOAPBoidAgent.AllAgents.Count >= 3 && !cooldownReady)
+        {
+            provider.RequestGoal<FlankGoal>();
+        }
+        else if (playerDist >= 15f && playerDist <= 30f)
+        {
+            provider.RequestGoal<GuardGoal>();
         }
         else
         {

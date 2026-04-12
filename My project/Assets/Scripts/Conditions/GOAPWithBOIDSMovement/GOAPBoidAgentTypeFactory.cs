@@ -15,6 +15,11 @@ public class GOAPBoidAgentTypeFactory : AgentTypeFactoryBase
         builder.AddCapability<GOAPBoidCombatCapabilityFactory>();
         builder.AddCapability<GOAPBoidRangedCombatCapabilityFactory>();
         builder.AddCapability<GOAPBoidWanderCapabilityFactory>();
+        builder.AddCapability<GOAPBoidScatterCapabilityFactory>();
+        builder.AddCapability<GOAPBoidRegroupCapabilityFactory>();
+        builder.AddCapability<GOAPBoidFlankCapabilityFactory>();
+        builder.AddCapability<GOAPBoidGuardCapabilityFactory>();
+        builder.AddCapability<GOAPBoidKiteCapabilityFactory>();
 
         return builder.Build();
     }

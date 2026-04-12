@@ -15,6 +15,11 @@ public class LeaderBoidAgentTypeFactory : AgentTypeFactoryBase
         builder.AddCapability<LeaderFleeCapabilityFactory>();
         builder.AddCapability<LeaderCombatCapabilityFactory>();
         builder.AddCapability<LeaderWanderCapabilityFactory>();
+        builder.AddCapability<LeaderScatterCapabilityFactory>();
+        builder.AddCapability<LeaderRegroupCapabilityFactory>();
+        builder.AddCapability<LeaderFlankCapabilityFactory>();
+        builder.AddCapability<LeaderGuardCapabilityFactory>();
+        builder.AddCapability<LeaderKiteCapabilityFactory>();
 
         return builder.Build();
     }
