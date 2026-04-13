@@ -1,3 +1,4 @@
+using CrashKonijn.Agent.Core;
 using CrashKonijn.Goap.Core;
 using CrashKonijn.Goap.Runtime;
 
@@ -20,6 +21,7 @@ public class PureCombatCapabilityFactory : CapabilityFactoryBase
         builder.AddAction<PureAttackAction>()
             .SetBaseCost(1)
             .SetTarget<PlayerTarget>()
+            .SetMoveMode(ActionMoveMode.PerformWhileMoving)
             .AddCondition<PlayerVisible>(Comparison.GreaterThanOrEqual, 1)
             .AddEffect<PureAttackDone>(EffectType.Increase);
 

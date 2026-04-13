@@ -38,6 +38,9 @@ public class ChargeAction : GoapActionBase<ChargeAction.Data>
             if (dist <= data.Boid.settings.attackContactDistance)
             {
                 data.Boid.manager.Target.GetComponent<PlayerHealth>()?.TakeDamage(data.Boid.settings.attackDamage);
+                BehavioralMetricsCollector.Instance?.LogEvent(
+                    "AttackHit", data.Boid.gameObject.name, -1,
+                    $"BoidCharge,Dmg={data.Boid.settings.attackDamage}");
                 data.Brain.damageDealtThisCharge = true;
             }
         }

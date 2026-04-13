@@ -1,9 +1,10 @@
+using CrashKonijn.Agent.Core;
 using CrashKonijn.Goap.Core;
 using CrashKonijn.Goap.Runtime;
 
 /// <summary>
-/// Wander/idle capability for PureGOAP agents.
-/// Fallback behavior when no player is visible.
+/// Wander capability: agents move as a school toward shared wander targets.
+/// Single action — PureSwarmMoveAction handles both cohesion and target-seeking.
 /// </summary>
 public class PureWanderCapabilityFactory : CapabilityFactoryBase
 {
@@ -11,18 +12,19 @@ public class PureWanderCapabilityFactory : CapabilityFactoryBase
     {
         var builder = new CapabilityBuilder("PureWanderCapability");
 
-        // Goal: Wander (low priority fallback)
+        // Goal: Wander as a school
         builder.AddGoal<PureWanderGoal>()
             .SetBaseCost(10)
             .AddCondition<IsWandering>(Comparison.GreaterThanOrEqual, 1);
 
-        // Action: Wander to random positions
-        builder.AddAction<PureWanderAction>()
+        // Single action: swarm movement toward shared target
+        builder.AddAction<PureSwarmMoveAction>()
             .SetBaseCost(1)
             .SetTarget<WanderTarget>()
+            .SetMoveMode(ActionMoveMode.PerformWhileMoving)
             .AddEffect<IsWandering>(EffectType.Increase);
 
-        // Sensor: Generate wander targets
+        // Sensor: shared wander target
         builder.AddTargetSensor<WanderTargetSensor>()
             .SetTarget<WanderTarget>();
 

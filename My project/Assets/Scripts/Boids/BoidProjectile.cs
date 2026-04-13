@@ -38,6 +38,8 @@ public class BoidProjectile : MonoBehaviour
         if (other.CompareTag("Player"))
         {
             other.GetComponent<PlayerHealth>()?.TakeDamage(damage);
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "ProjectileHit", gameObject.name, -1, $"Dmg={damage:F1}");
             Destroy(gameObject);
         }
     }

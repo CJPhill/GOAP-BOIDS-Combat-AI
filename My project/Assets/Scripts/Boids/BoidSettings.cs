@@ -97,4 +97,22 @@ public class BoidSettings : ScriptableObject
     public float meleeRecoveryDuration = 0.5f;
     public float meleeWindUpSteerWeight = 5f;    // how strongly boids steer away during wind-up
     public float meleeChargeSteerWeight = 10f;   // how strongly boids steer toward charge target
+
+    [Header("Tactical Behaviors")]
+    [Tooltip("Distance from flock centroid that triggers Regroup")]
+    public float isolationThreshold = 20f;
+    [Tooltip("Distance from centroid at which Regroup completes")]
+    public float regroupRadius = 8f;
+    [Tooltip("Health fraction below which Scatter triggers (below Flee threshold)")]
+    public float criticalHealthThreshold = 0.15f;
+    [Tooltip("Speed multiplier during Scatter")]
+    public float scatterSpeedMultiplier = 1.5f;
+    [Tooltip("Min distance from player before ranged agents start kiting")]
+    public float kiteMinDistance = 8f;
+    [Tooltip("Max distance at which ranged agents fire while kiting")]
+    public float kiteMaxDistance = 15f;
+    [Tooltip("Inner range of Guard zone (closer triggers Attack)")]
+    public float guardInnerRange = 15f;
+    [Tooltip("Outer range of Guard zone (farther triggers Wander)")]
+    public float guardOuterRange = 30f;
 }

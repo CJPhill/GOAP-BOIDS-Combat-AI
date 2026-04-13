@@ -43,6 +43,11 @@ public class FlockManager : MonoBehaviour
     public Transform Target => target;
     public FlockState State => state;
 
+    // Leader support for BOIDSWithGOAPLeader condition
+    private BoidAgent leaderBoid;
+    public BoidAgent LeaderBoid => leaderBoid;
+    public void SetLeader(BoidAgent leader) { leaderBoid = leader; }
+
     public bool IsDead => currentFlockHealth <= 0f;
     public float HealthPercent => settings != null ? currentFlockHealth / settings.maxHealth : 0f;
 
@@ -218,8 +223,9 @@ public class FlockManager : MonoBehaviour
             return; // Don't advance while grouping
         }
 
-        // Flock-level attacks — disabled when GOAP is on (per-boid GOAP actions handle combat instead).
-        if (!GoapToggle.UseGoap)
+        // Flock-level attacks — disabled when active condition uses GOAP (leader GOAP actions handle combat instead).
+        bool useGoap = ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+        if (!useGoap)
         {
             if (settings.flockType == FlockType.Ranged)
                 UpdateRangedFlockAttack();
@@ -251,7 +257,7 @@ public class FlockManager : MonoBehaviour
             SetTarget(other.transform);
     }
 
-    private void SpawnFlock()
+    public void SpawnFlock()
     {
         // Cache the GOAP behaviour lookup once, outside the per-boid loop.
         var goapBehaviour = FindFirstObjectByType<GoapBehaviour>();
@@ -383,7 +389,12 @@ public class FlockManager : MonoBehaviour
             if (neighborCount > 0)
             {
                 alignmentHeading /= neighborCount;
-                cohesionCenter = (cohesionCenter / neighborCount) - boid.Position;
+
+                // Leader redirect: followers cohese toward leader instead of average neighbor
+                if (leaderBoid != null && boid != leaderBoid && leaderBoid.gameObject != null)
+                    cohesionCenter = leaderBoid.Position - boid.Position;
+                else
+                    cohesionCenter = (cohesionCenter / neighborCount) - boid.Position;
             }
 
             // Cross-flock separation (separation only, no alignment/cohesion)

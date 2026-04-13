@@ -5,7 +5,7 @@ using UnityEngine;
 /// Per-boid GOAP controller. Attached alongside BoidAgent, AgentBehaviour, and GoapActionProvider.
 /// Holds all transient attack state that GOAP actions read/write, and drives goal selection each frame.
 ///
-/// Components are inert when GoapToggle.UseGoap is false — no goals are requested and no state changes.
+/// Components are inert when the active condition does not use GOAP for boids.
 /// </summary>
 public class BoidGoapBrain : MonoBehaviour
 {
@@ -73,7 +73,8 @@ public class BoidGoapBrain : MonoBehaviour
 
     private void Update()
     {
-        if (!GoapToggle.UseGoap || provider == null || provider.AgentType == null)
+        bool useGoap = ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+        if (!useGoap || provider == null || provider.AgentType == null)
             return;
 
         var manager = boid?.manager;

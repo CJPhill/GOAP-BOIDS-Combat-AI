@@ -1,6 +1,7 @@
 using CrashKonijn.Goap.Runtime;
 using UnityEngine;
 using UnityEngine.Profiling;
+using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
@@ -11,20 +12,39 @@ using System.Collections.Generic;
 /// </summary>
 public class ConditionManager : MonoBehaviour
 {
+    public static ConditionManager Instance { get; private set; }
+
+    /// <summary>
+    /// True when the active condition uses GOAP for boid-level combat (BOIDSWithGOAPLeader).
+    /// Used by BoidAgent and FlockManager to decide FSM vs GOAP path.
+    /// </summary>
+    public bool UsesGoapForBoids => CurrentCondition == AgentCondition.BOIDSWithGOAPLeader;
+
     [Header("Condition Selection")]
     [Tooltip("The currently active experimental condition. Change this to switch AI architectures.")]
     public AgentCondition CurrentCondition = AgentCondition.PureGOAP;
 
     [Header("Agent Configuration")]
-    [Tooltip("Number of agents to spawn for this test run.")]
+    [Tooltip("Number of agents to spawn (used by PureGOAP and hybrid conditions).")]
     [SerializeField] private int agentCount = 10;
 
     [Tooltip("Spawn radius around the manager's position.")]
     [SerializeField] private float spawnRadius = 15f;
 
-    [Header("Prefabs (One per Condition)")]
+    [Tooltip("Fraction of agents that are ranged (0 = all melee, 1 = all ranged).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float rangedAgentRatio = 0.3f;
+
+    [Header("PureGOAP Prefab")]
     [SerializeField] private GameObject pureGOAPAgentPrefab;
-    [SerializeField] private GameObject pureBOIDSAgentPrefab;
+
+    [Header("PureBOIDS Prefabs (FlockManagers)")]
+    [Tooltip("FlockManager prefab with MeleeBoidSettings assigned.")]
+    [SerializeField] private GameObject meleeFlockManagerPrefab;
+    [Tooltip("FlockManager prefab with RangedBoidSettings assigned. Leave empty for melee-only.")]
+    [SerializeField] private GameObject rangedFlockManagerPrefab;
+
+    [Header("Hybrid Prefabs (Future)")]
     [SerializeField] private GameObject boidsWithGOAPLeaderPrefab;
     [SerializeField] private GameObject goapWithBOIDSMovementPrefab;
 
@@ -39,6 +59,16 @@ public class ConditionManager : MonoBehaviour
     [Tooltip("Reference to the player transform (target for all agents).")]
     public Transform playerTransform;
 
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    private void Start()
+    {
+        SpawnAgentsForCondition();
+    }
+
     /// <summary>
     /// Spawns agents for the currently selected condition.
     /// Clears any existing agents first.
@@ -47,18 +77,134 @@ public class ConditionManager : MonoBehaviour
     {
         Profiler.BeginSample("ConditionManager.SpawnAgentsForCondition");
 
-        // Clear existing agents
         ClearAgents();
 
+        switch (CurrentCondition)
+        {
+            case AgentCondition.PureBOIDS:
+                SpawnPureBOIDSFlocks();
+                break;
+
+            case AgentCondition.BOIDSWithGOAPLeader:
+                StartCoroutine(SpawnBOIDSWithGOAPLeaderFlocks());
+                break;
+
+            case AgentCondition.GOAPWithBOIDSMovement:
+                SpawnGOAPWithBOIDSMovementFlocks();
+                break;
+
+            default:
+                SpawnIndividualAgents();
+                break;
+        }
+
+        Debug.Log($"[ConditionManager] Spawned agents for condition: {CurrentCondition}");
+        Profiler.EndSample();
+    }
+
+    /// <summary>
+    /// Spawns FlockManager(s) for PureBOIDS condition.
+    /// Each FlockManager spawns its own boids internally via Start().
+    /// </summary>
+    private void SpawnPureBOIDSFlocks()
+    {
+        if (meleeFlockManagerPrefab != null)
+        {
+            GameObject melee = Instantiate(meleeFlockManagerPrefab, transform.position, Quaternion.identity, transform);
+            melee.name = "PureBOIDS_MeleeFlockManager";
+            spawnedAgents.Add(melee);
+        }
+
+        if (rangedFlockManagerPrefab != null)
+        {
+            // Offset ranged flock slightly so they don't overlap at spawn
+            Vector3 rangedPos = transform.position + Vector3.right * spawnRadius * 0.5f;
+            GameObject ranged = Instantiate(rangedFlockManagerPrefab, rangedPos, Quaternion.identity, transform);
+            ranged.name = "PureBOIDS_RangedFlockManager";
+            spawnedAgents.Add(ranged);
+        }
+
+        if (meleeFlockManagerPrefab == null && rangedFlockManagerPrefab == null)
+        {
+            Debug.LogError("[ConditionManager] No FlockManager prefabs assigned for PureBOIDS condition!");
+        }
+    }
+
+    /// <summary>
+    /// Spawns FlockManager(s) for BOIDSWithGOAPLeader condition.
+    /// Uses a coroutine to wait one frame so FlockManager.Start() finishes spawning boids,
+    /// then designates boid[0] as the GOAP leader.
+    /// </summary>
+    private IEnumerator SpawnBOIDSWithGOAPLeaderFlocks()
+    {
+        // Spawn FlockManagers (same prefabs as PureBOIDS)
+        List<FlockManager> managers = new List<FlockManager>();
+
+        if (meleeFlockManagerPrefab != null)
+        {
+            GameObject melee = Instantiate(meleeFlockManagerPrefab, transform.position, Quaternion.identity, transform);
+            melee.name = "LeaderBOIDS_MeleeFlockManager";
+            spawnedAgents.Add(melee);
+            managers.Add(melee.GetComponent<FlockManager>());
+        }
+
+        if (rangedFlockManagerPrefab != null)
+        {
+            Vector3 rangedPos = transform.position + Vector3.right * spawnRadius * 0.5f;
+            GameObject ranged = Instantiate(rangedFlockManagerPrefab, rangedPos, Quaternion.identity, transform);
+            ranged.name = "LeaderBOIDS_RangedFlockManager";
+            spawnedAgents.Add(ranged);
+            managers.Add(ranged.GetComponent<FlockManager>());
+        }
+
+        // Wait one frame for FlockManager.Start() → SpawnFlock() to complete
+        yield return null;
+
+        // Designate boid[0] in each flock as leader
+        foreach (var mgr in managers)
+        {
+            if (mgr == null || mgr.Boids.Count == 0) continue;
+
+            BoidAgent leader = mgr.Boids[0];
+            mgr.SetLeader(leader);
+
+            // Attach leader GOAP brain (disable the default BoidGoapBrain to avoid conflicts)
+            var defaultBrain = leader.GetComponent<BoidGoapBrain>();
+            if (defaultBrain != null)
+                defaultBrain.enabled = false;
+
+            leader.gameObject.AddComponent<LeaderGoapBrain>();
+
+            // Wire GOAP agent type
+            var provider = leader.GetComponent<GoapActionProvider>();
+            if (provider != null && goapBehaviour != null)
+            {
+                provider.AgentType = goapBehaviour.GetAgentType("LeaderBoid");
+            }
+
+            // Visual distinction: gold color, slightly larger
+            Renderer rend = leader.GetComponentInChildren<Renderer>();
+            if (rend != null)
+                rend.material.color = new Color(1f, 0.84f, 0f); // Gold
+
+            leader.transform.localScale *= 1.3f;
+
+            Debug.Log($"[ConditionManager] Designated leader in {mgr.name}: {leader.name}");
+        }
+    }
+
+    /// <summary>
+    /// Spawns individual agents for conditions that use per-agent prefabs (PureGOAP, hybrids).
+    /// </summary>
+    private void SpawnIndividualAgents()
+    {
         GameObject prefab = GetPrefabForCondition(CurrentCondition);
         if (prefab == null)
         {
             Debug.LogError($"[ConditionManager] No prefab assigned for condition: {CurrentCondition}");
-            Profiler.EndSample();
             return;
         }
 
-        // Spawn agents in a circle around the manager
         for (int i = 0; i < agentCount; i++)
         {
             Vector3 spawnPos = transform.position + GetSpawnOffset(i);
@@ -71,13 +217,74 @@ public class ConditionManager : MonoBehaviour
 
             spawnedAgents.Add(agent);
         }
-
-        Debug.Log($"[ConditionManager] Spawned {agentCount} agents for condition: {CurrentCondition}");
-        Profiler.EndSample();
     }
 
     /// <summary>
-    /// Clears all currently spawned agents.
+    /// Spawns GOAPWithBOIDSMovement agents as separate melee and ranged flocks.
+    /// Each flock has its own flockId so BOIDS forces only apply within the flock.
+    /// </summary>
+    private void SpawnGOAPWithBOIDSMovementFlocks()
+    {
+        GameObject prefab = goapWithBOIDSMovementPrefab;
+        if (prefab == null)
+        {
+            Debug.LogError("[ConditionManager] No prefab assigned for GOAPWithBOIDSMovement!");
+            return;
+        }
+
+        int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+        int meleeCount = agentCount - rangedCount;
+
+        // Spawn melee flock (flockId = 0)
+        for (int i = 0; i < meleeCount; i++)
+        {
+            Vector3 spawnPos = transform.position + GetSpawnOffset(i);
+            Quaternion spawnRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            GameObject agent = Instantiate(prefab, spawnPos, spawnRot, transform);
+            agent.name = $"GOAPBoid_Melee_{i}";
+
+            var gbAgent = agent.GetComponent<GOAPBoidAgent>();
+            if (gbAgent != null)
+            {
+                gbAgent.SetAttackType(AttackType.Melee);
+                gbAgent.flockId = 0;
+            }
+
+            var gbProvider = agent.GetComponent<GoapActionProvider>();
+            if (gbProvider != null && goapBehaviour != null)
+                gbProvider.AgentType = goapBehaviour.GetAgentType("GOAPBoidAgent");
+
+            spawnedAgents.Add(agent);
+        }
+
+        // Spawn ranged flock (flockId = 1), offset from melee
+        Vector3 rangedOffset = Vector3.right * spawnRadius * 0.5f;
+        for (int i = 0; i < rangedCount; i++)
+        {
+            Vector3 spawnPos = transform.position + rangedOffset + GetSpawnOffset(i);
+            Quaternion spawnRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            GameObject agent = Instantiate(prefab, spawnPos, spawnRot, transform);
+            agent.name = $"GOAPBoid_Ranged_{i}";
+
+            var gbAgent = agent.GetComponent<GOAPBoidAgent>();
+            if (gbAgent != null)
+            {
+                gbAgent.SetAttackType(AttackType.Ranged);
+                gbAgent.flockId = 1;
+            }
+
+            var gbProvider = agent.GetComponent<GoapActionProvider>();
+            if (gbProvider != null && goapBehaviour != null)
+                gbProvider.AgentType = goapBehaviour.GetAgentType("GOAPBoidAgent");
+
+            spawnedAgents.Add(agent);
+        }
+
+        Debug.Log($"[ConditionManager] Spawned GOAPWithBOIDSMovement: {meleeCount} melee (flock 0), {rangedCount} ranged (flock 1)");
+    }
+
+    /// <summary>
+    /// Clears all currently spawned agents and flocks.
     /// </summary>
     public void ClearAgents()
     {
@@ -89,29 +296,19 @@ public class ConditionManager : MonoBehaviour
         spawnedAgents.Clear();
     }
 
-    /// <summary>
-    /// Returns the prefab for the specified condition.
-    /// </summary>
     private GameObject GetPrefabForCondition(AgentCondition condition)
     {
         return condition switch
         {
             AgentCondition.PureGOAP => pureGOAPAgentPrefab,
-            AgentCondition.PureBOIDS => pureBOIDSAgentPrefab,
             AgentCondition.BOIDSWithGOAPLeader => boidsWithGOAPLeaderPrefab,
             AgentCondition.GOAPWithBOIDSMovement => goapWithBOIDSMovementPrefab,
             _ => null
         };
     }
 
-    /// <summary>
-    /// Performs condition-specific initialization on the spawned agent.
-    /// </summary>
     private void InitializeAgentForCondition(GameObject agent, AgentCondition condition)
     {
-        // Common: set player reference if agent has a component that needs it
-        // Condition-specific initialization will be handled by the agent's own Awake/Start
-
         switch (condition)
         {
             case AgentCondition.PureGOAP:
@@ -120,31 +317,37 @@ public class ConditionManager : MonoBehaviour
                 {
                     provider.AgentType = goapBehaviour.GetAgentType("PureGOAPAgent");
                 }
-                break;
-
-            case AgentCondition.PureBOIDS:
-                // PureBOIDSAgent initializes itself
-                break;
-
-            case AgentCondition.BOIDSWithGOAPLeader:
-                // Mark first agent as leader
-                if (spawnedAgents.Count == 0)
+                // Assign melee/ranged based on ratio
+                var pureAgent = agent.GetComponent<PureGOAPAgent>();
+                if (pureAgent != null)
                 {
-                    // This is the first agent — make it the leader
-                    var leaderComponent = agent.AddComponent<FlockLeader>();
-                    // Leader component will handle its own initialization
+                    int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+                    bool isRanged = spawnedAgents.Count < rangedCount;
+                    pureAgent.SetAttackType(isRanged ? AttackType.Ranged : AttackType.Melee);
                 }
                 break;
 
+            case AgentCondition.BOIDSWithGOAPLeader:
+                // Handled by SpawnBOIDSWithGOAPLeaderFlocks() coroutine — not individual agents
+                break;
+
             case AgentCondition.GOAPWithBOIDSMovement:
-                // Hybrid agent initializes itself
+                var gbProvider = agent.GetComponent<GoapActionProvider>();
+                if (gbProvider != null && goapBehaviour != null)
+                {
+                    gbProvider.AgentType = goapBehaviour.GetAgentType("GOAPBoidAgent");
+                }
+                var gbAgent = agent.GetComponent<GOAPBoidAgent>();
+                if (gbAgent != null)
+                {
+                    int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+                    bool isRanged = spawnedAgents.Count < rangedCount;
+                    gbAgent.SetAttackType(isRanged ? AttackType.Ranged : AttackType.Melee);
+                }
                 break;
         }
     }
 
-    /// <summary>
-    /// Calculates spawn offset for agent i in a circular pattern.
-    /// </summary>
     private Vector3 GetSpawnOffset(int index)
     {
         float angle = (360f / agentCount) * index * Mathf.Deg2Rad;
@@ -159,7 +362,6 @@ public class ConditionManager : MonoBehaviour
 
     private void OnValidate()
     {
-        // Clamp agent count to reasonable range
         agentCount = Mathf.Clamp(agentCount, 1, 100);
     }
 
