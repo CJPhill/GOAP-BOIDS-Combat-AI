@@ -28,14 +28,8 @@ public class GOAPBoidRegroupAction : GoapActionBase<GOAPBoidRegroupAction.Data>
 
     public override IActionRunState Perform(IMonoAgent agent, Data data, IActionContext context)
     {
-        // Compute swarm centroid
-        Vector3 centroid = Vector3.zero;
-        if (GOAPBoidAgent.AllAgents.Count > 0)
-        {
-            for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
-                centroid += GOAPBoidAgent.AllAgents[i].Position;
-            centroid /= GOAPBoidAgent.AllAgents.Count;
-        }
+        // Compute flock centroid (same flockId only)
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(data.Agent.flockId);
 
         data.Agent.SteerToward(centroid);
 

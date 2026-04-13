@@ -32,6 +32,8 @@ public class BoidAgent : MonoBehaviour, IEnemy
 
     public void TakeDamage(float amount)
     {
+        BehavioralMetricsCollector.Instance?.LogEvent(
+            "Damage", gameObject.name, -1, $"Amount={amount:F1}");
         manager.TakeDamage(amount);
     }
 
@@ -83,9 +85,10 @@ public class BoidAgent : MonoBehaviour, IEnemy
             }
         }
 
-        // Attack state machine (legacy FSM) — only runs when GOAP toggle is OFF.
-        // When GOAP is ON, GOAP actions drive velocity directly via BoidGoapBrain.
-        if (!GoapToggle.UseGoap
+        // Attack state machine (legacy FSM) — only runs when the active condition does NOT use GOAP for boids.
+        // When GOAP is active (BOIDSWithGOAPLeader), GOAP actions drive velocity directly via BoidGoapBrain.
+        bool useGoap = ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+        if (!useGoap
             && manager.Target != null
             && manager.State == FlockManager.FlockState.Engaging
             && !manager.IsDead)
@@ -121,16 +124,19 @@ public class BoidAgent : MonoBehaviour, IEnemy
         }
     }
 
+    private bool ConditionUsesGoap =>
+        ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+
     public bool IsAttacking =>
-        (GoapToggle.UseGoap && goapBrain != null && goapBrain.isGoapAttacking)
-        || (!GoapToggle.UseGoap && attackState != AttackState.Flocking);
+        (ConditionUsesGoap && goapBrain != null && goapBrain.isGoapAttacking)
+        || (!ConditionUsesGoap && attackState != AttackState.Flocking);
 
     // True for states that fully override movement (both legacy FSM and GOAP paths).
     private bool IsMovementOverridden =>
         attackState == AttackState.Formation
         || attackState == AttackState.InfinitySweep
         || attackState == AttackState.WindUp
-        || (GoapToggle.UseGoap && goapBrain != null && goapBrain.isMovementOverridden);
+        || (ConditionUsesGoap && goapBrain != null && goapBrain.isMovementOverridden);
 
     public void SetFormationTarget(Vector3 worldPos, bool active)
     {

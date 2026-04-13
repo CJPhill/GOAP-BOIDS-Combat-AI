@@ -29,17 +29,12 @@ public class GOAPBoidGuardAction : GoapActionBase<GOAPBoidGuardAction.Data>
     {
         data.GuardTimer = SafetyTimeout;
 
-        // Compute guard center (swarm centroid)
-        Vector3 centroid = Vector3.zero;
-        int count = GOAPBoidAgent.AllAgents.Count;
-        if (count > 0)
-        {
-            for (int i = 0; i < count; i++)
-                centroid += GOAPBoidAgent.AllAgents[i].Position;
-            centroid /= count;
-        }
+        // Compute guard center (flock centroid, same flockId only)
+        var flockmates = GOAPBoidAgent.GetFlockmates(data.Agent.flockId);
+        int count = flockmates.Count;
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(data.Agent.flockId);
 
-        int slotIndex = GOAPBoidAgent.AllAgents.IndexOf(data.Agent);
+        int slotIndex = flockmates.IndexOf(data.Agent);
         if (slotIndex < 0) slotIndex = 0;
 
         Vector3[] slots = FlankingSlotCalculator.ComputeGuardSlots(centroid, count, GuardRingRadius);

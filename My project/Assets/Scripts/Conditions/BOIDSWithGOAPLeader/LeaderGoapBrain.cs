@@ -18,6 +18,10 @@ public class LeaderGoapBrain : MonoBehaviour
     private GoapActionProvider provider;
     private Transform playerTransform;
 
+    /// <summary>The last resolved goal type (for metrics/testing).</summary>
+    [HideInInspector] public GoalPriorityResolver.GoalType currentGoalType;
+    private GoalPriorityResolver.GoalType previousGoalType = GoalPriorityResolver.GoalType.Wander;
+
     private void Awake()
     {
         boid = GetComponent<BoidAgent>();
@@ -65,37 +69,43 @@ public class LeaderGoapBrain : MonoBehaviour
         float kiteMin = boid.settings != null ? boid.settings.kiteMinDistance : 8f;
         float isolationThreshold = boid.settings != null ? boid.settings.isolationThreshold : 20f;
 
-        if (playerNearby && healthPercent < criticalThreshold)
+        bool isIsolated = boid.manager != null &&
+            Vector3.Distance(transform.position, boid.manager.GetFlockCenter()) > isolationThreshold;
+        int flockCount = boid.manager != null ? boid.manager.BoidCount : 0;
+
+        var goal = GoalPriorityResolver.ResolveLeaderGoal(
+            healthPercent, playerNearby, cooldownReady, isRanged,
+            playerDist, isIsolated, flockCount,
+            criticalThreshold, kiteMin, guardInner, guardOuter);
+
+        currentGoalType = goal;
+
+        if (goal != previousGoalType)
         {
-            provider.RequestGoal<LeaderScatterGoal>();
+            int leaderId = 0; // Leader is always boid[0]
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "GoalChange", gameObject.name, leaderId, $"{previousGoalType}→{goal}");
+            previousGoalType = goal;
         }
-        else if (playerNearby && healthPercent < 0.3f)
+
+        switch (goal)
         {
-            provider.RequestGoal<LeaderFleeGoal>();
-        }
-        else if (playerNearby && cooldownReady)
-        {
-            // Ranged leaders kite when player is too close, otherwise normal attack
-            if (isRanged && playerDist < kiteMin)
-                provider.RequestGoal<LeaderKiteGoal>();
-            else
-                provider.RequestGoal<LeaderAttackGoal>();
-        }
-        else if (boid.manager != null && Vector3.Distance(transform.position, boid.manager.GetFlockCenter()) > isolationThreshold)
-        {
-            provider.RequestGoal<LeaderRegroupGoal>();
-        }
-        else if (playerNearby && boid.manager.BoidCount >= 3 && !cooldownReady)
-        {
-            provider.RequestGoal<LeaderFlankGoal>();
-        }
-        else if (playerDist >= guardInner && playerDist <= guardOuter)
-        {
-            provider.RequestGoal<LeaderGuardGoal>();
-        }
-        else
-        {
-            provider.RequestGoal<LeaderWanderGoal>();
+            case GoalPriorityResolver.GoalType.Scatter:
+                provider.RequestGoal<LeaderScatterGoal>(); break;
+            case GoalPriorityResolver.GoalType.Flee:
+                provider.RequestGoal<LeaderFleeGoal>(); break;
+            case GoalPriorityResolver.GoalType.Attack:
+                provider.RequestGoal<LeaderAttackGoal>(); break;
+            case GoalPriorityResolver.GoalType.Kite:
+                provider.RequestGoal<LeaderKiteGoal>(); break;
+            case GoalPriorityResolver.GoalType.Regroup:
+                provider.RequestGoal<LeaderRegroupGoal>(); break;
+            case GoalPriorityResolver.GoalType.Flank:
+                provider.RequestGoal<LeaderFlankGoal>(); break;
+            case GoalPriorityResolver.GoalType.Guard:
+                provider.RequestGoal<LeaderGuardGoal>(); break;
+            default:
+                provider.RequestGoal<LeaderWanderGoal>(); break;
         }
     }
 }

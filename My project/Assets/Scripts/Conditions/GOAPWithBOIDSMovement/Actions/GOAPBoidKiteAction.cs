@@ -72,6 +72,9 @@ public class GOAPBoidKiteAction : GoapActionBase<GOAPBoidKiteAction.Data>
                     );
                     BoidProjectile bp = proj.GetComponent<BoidProjectile>();
                     bp?.Initialize(fireDir, ProjectileSpeed, ProjectileDamage, data.Agent.targetPlayer, ProjectileTurnSpeed);
+                    BehavioralMetricsCollector.Instance?.LogEvent(
+                        "AttackFired", data.Agent.gameObject.name, data.Agent.flockId,
+                        $"Kite,Dmg={ProjectileDamage}");
                 }
                 return ActionRunState.Completed;
         }

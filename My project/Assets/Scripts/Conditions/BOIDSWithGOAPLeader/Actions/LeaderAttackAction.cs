@@ -93,7 +93,12 @@ public class LeaderAttackAction : GoapActionBase<LeaderAttackAction.Data>
                 {
                     var playerHealth = data.PlayerTransform.GetComponent<PlayerHealth>();
                     if (playerHealth != null)
+                    {
                         playerHealth.TakeDamage(data.Boid.settings.attackDamage);
+                        BehavioralMetricsCollector.Instance?.LogEvent(
+                            "AttackHit", data.Boid.gameObject.name, 0,
+                            $"LeaderMelee,Dmg={data.Boid.settings.attackDamage}");
+                    }
                     data.DamageDealt = true;
                 }
 

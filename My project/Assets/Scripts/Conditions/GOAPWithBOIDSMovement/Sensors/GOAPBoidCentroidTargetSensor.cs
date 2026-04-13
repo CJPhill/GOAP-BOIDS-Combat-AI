@@ -14,14 +14,11 @@ public class GOAPBoidCentroidTargetSensor : LocalTargetSensorBase
 
     public override ITarget Sense(IActionReceiver agent, IComponentReference references, ITarget existingTarget)
     {
-        if (GOAPBoidAgent.AllAgents.Count == 0)
+        var boidAgent = references.GetCachedComponent<GOAPBoidAgent>();
+        if (boidAgent == null || GOAPBoidAgent.GetFlockCount(boidAgent.flockId) == 0)
             return existingTarget;
 
-        Vector3 centroid = Vector3.zero;
-        for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
-            centroid += GOAPBoidAgent.AllAgents[i].Position;
-        centroid /= GOAPBoidAgent.AllAgents.Count;
-
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(boidAgent.flockId);
         return new PositionTarget(centroid);
     }
 }

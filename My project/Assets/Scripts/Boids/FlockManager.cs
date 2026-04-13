@@ -223,8 +223,9 @@ public class FlockManager : MonoBehaviour
             return; // Don't advance while grouping
         }
 
-        // Flock-level attacks — disabled when GOAP is on (per-boid GOAP actions handle combat instead).
-        if (!GoapToggle.UseGoap)
+        // Flock-level attacks — disabled when active condition uses GOAP (leader GOAP actions handle combat instead).
+        bool useGoap = ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+        if (!useGoap)
         {
             if (settings.flockType == FlockType.Ranged)
                 UpdateRangedFlockAttack();

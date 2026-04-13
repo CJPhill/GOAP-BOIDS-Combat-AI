@@ -23,18 +23,10 @@ public class GOAPBoidScatterAction : GoapActionBase<GOAPBoidScatterAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
-        // Compute swarm centroid
-        Vector3 centroid = Vector3.zero;
-        if (GOAPBoidAgent.AllAgents.Count > 0)
-        {
-            for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
-                centroid += GOAPBoidAgent.AllAgents[i].Position;
-            centroid /= GOAPBoidAgent.AllAgents.Count;
-        }
-        else
-        {
+        // Compute flock centroid (same flockId only)
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(data.Agent.flockId);
+        if (centroid == Vector3.zero)
             centroid = data.Agent.Position;
-        }
 
         data.ScatterDirection = ScatterDirectionPicker.PickScatterDirection(data.Agent.Position, centroid);
         data.ScatterTimer = Random.Range(4f, 6f);

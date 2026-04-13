@@ -31,18 +31,13 @@ public class GOAPBoidFlankAction : GoapActionBase<GOAPBoidFlankAction.Data>
 
         Vector3 playerPos = data.Target.Position;
 
-        // Compute swarm centroid
-        Vector3 centroid = Vector3.zero;
-        int count = GOAPBoidAgent.AllAgents.Count;
-        if (count > 0)
-        {
-            for (int i = 0; i < count; i++)
-                centroid += GOAPBoidAgent.AllAgents[i].Position;
-            centroid /= count;
-        }
+        // Compute flock centroid and count (same flockId only)
+        var flockmates = GOAPBoidAgent.GetFlockmates(data.Agent.flockId);
+        int count = flockmates.Count;
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(data.Agent.flockId);
 
-        // Get unique slot index for this agent
-        int slotIndex = GOAPBoidAgent.AllAgents.IndexOf(data.Agent);
+        // Get unique slot index within the flock
+        int slotIndex = flockmates.IndexOf(data.Agent);
         if (slotIndex < 0) slotIndex = 0;
 
         Vector3[] slots = FlankingSlotCalculator.ComputeFlankSlots(playerPos, centroid, count, FlankRadius);

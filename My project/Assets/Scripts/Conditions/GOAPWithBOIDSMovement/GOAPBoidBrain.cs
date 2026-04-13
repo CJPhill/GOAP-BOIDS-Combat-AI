@@ -16,6 +16,10 @@ public class GOAPBoidBrain : MonoBehaviour
     private GoapActionProvider provider;
     private Transform playerTransform;
 
+    /// <summary>The last resolved goal type (for metrics/testing).</summary>
+    [HideInInspector] public GoalPriorityResolver.GoalType currentGoalType;
+    private GoalPriorityResolver.GoalType previousGoalType = GoalPriorityResolver.GoalType.Wander;
+
     private void Awake()
     {
         agent = GetComponent<GOAPBoidAgent>();
@@ -49,50 +53,48 @@ public class GOAPBoidBrain : MonoBehaviour
             ? Vector3.Distance(transform.position, playerTransform.position)
             : float.MaxValue;
 
-        // Check isolation from swarm centroid
+        // Check isolation from flock centroid (same flockId only)
         bool isIsolated = false;
-        if (GOAPBoidAgent.AllAgents.Count > 1)
+        int flockCount = GOAPBoidAgent.GetFlockCount(agent.flockId);
+        if (flockCount > 1)
         {
-            Vector3 centroid = Vector3.zero;
-            for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
-                centroid += GOAPBoidAgent.AllAgents[i].Position;
-            centroid /= GOAPBoidAgent.AllAgents.Count;
+            Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(agent.flockId);
             isIsolated = Vector3.Distance(transform.position, centroid) > 20f;
         }
 
-        if (playerNearby && healthPercent < 0.15f)
+        var goal = GoalPriorityResolver.ResolveGOAPBoidGoal(
+            healthPercent, playerNearby, cooldownReady, isRanged,
+            playerDist, isIsolated, flockCount);
+
+        currentGoalType = goal;
+
+        if (goal != previousGoalType)
         {
-            provider.RequestGoal<ScatterGoal>();
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "GoalChange", gameObject.name, agent.flockId, $"{previousGoalType}→{goal}");
+            previousGoalType = goal;
         }
-        else if (playerNearby && healthPercent < 0.3f)
+
+        switch (goal)
         {
-            provider.RequestGoal<PureFleeGoal>();
-        }
-        else if (playerNearby && cooldownReady)
-        {
-            // Ranged agents kite when player is too close
-            if (isRanged && playerDist < 8f)
-                provider.RequestGoal<KiteGoal>();
-            else if (isRanged)
-                provider.RequestGoal<PureRangedAttackGoal>();
-            else
-                provider.RequestGoal<PureAttackGoal>();
-        }
-        else if (isIsolated)
-        {
-            provider.RequestGoal<RegroupGoal>();
-        }
-        else if (playerNearby && GOAPBoidAgent.AllAgents.Count >= 3 && !cooldownReady)
-        {
-            provider.RequestGoal<FlankGoal>();
-        }
-        else if (playerDist >= 15f && playerDist <= 30f)
-        {
-            provider.RequestGoal<GuardGoal>();
-        }
-        else
-        {
-            provider.RequestGoal<PureWanderGoal>();
+            case GoalPriorityResolver.GoalType.Scatter:
+                provider.RequestGoal<ScatterGoal>(); break;
+            case GoalPriorityResolver.GoalType.Flee:
+                provider.RequestGoal<PureFleeGoal>(); break;
+            case GoalPriorityResolver.GoalType.Attack:
+                provider.RequestGoal<PureAttackGoal>(); break;
+            case GoalPriorityResolver.GoalType.RangedAttack:
+                provider.RequestGoal<PureRangedAttackGoal>(); break;
+            case GoalPriorityResolver.GoalType.Kite:
+                provider.RequestGoal<KiteGoal>(); break;
+            case GoalPriorityResolver.GoalType.Regroup:
+                provider.RequestGoal<RegroupGoal>(); break;
+            case GoalPriorityResolver.GoalType.Flank:
+                provider.RequestGoal<FlankGoal>(); break;
+            case GoalPriorityResolver.GoalType.Guard:
+                provider.RequestGoal<GuardGoal>(); break;
+            default:
+                provider.RequestGoal<PureWanderGoal>(); break;
         }
     }
 }

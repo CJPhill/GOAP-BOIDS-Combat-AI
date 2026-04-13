@@ -132,6 +132,7 @@ GameObject:
   - component: {fileID: 49173740}
   - component: {fileID: 49173739}
   - component: {fileID: 49173743}
+  - component: {fileID: 49173744}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -247,6 +248,25 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
   maxHealth: 100
+--- !u!114 &49173744
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 49173738}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa1f248d9a80fe3468d277cba8fbc03e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GameScripts::AutomatedPlayer
+  moveSpeed: 6
+  directionChangeInterval: 3
+  approachChance: 0.35
+  pauseChance: 0.15
+  retreatChance: 0.7
+  retreatHealthThreshold: 0.4
+  retreatDuration: 4
 --- !u!1 &405681993
 GameObject:
   m_ObjectHideFlags: 0
@@ -695,51 +715,6 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -1.83448, y: 0, z: -14.26339}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &973697509
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 973697511}
-  - component: {fileID: 973697510}
-  m_Layer: 0
-  m_Name: AIToggle
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &973697510
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 973697509}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6941686dacb12d44cb3f79595327cfa6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::GoapToggle
-  useGoap: 0
---- !u!4 &973697511
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 973697509}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.30849, y: 0, z: 21.34957}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1440,6 +1415,7 @@ GameObject:
   - component: {fileID: 2035265740}
   - component: {fileID: 2035265745}
   - component: {fileID: 2035265746}
+  - component: {fileID: 2035265747}
   m_Layer: 0
   m_Name: GoapManager
   m_TagString: Untagged
@@ -1501,6 +1477,7 @@ MonoBehaviour:
   - {fileID: 2035265740}
   - {fileID: 2035265745}
   - {fileID: 2035265746}
+  - {fileID: 2035265747}
 --- !u!4 &2035265744
 Transform:
   m_ObjectHideFlags: 0
@@ -1540,6 +1517,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 06b766754e9805a49a7b8105248049ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GOAPBoidAgentTypeFactory
+--- !u!114 &2035265747
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2035265739}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d6a3c36297691143a5a3545b9a0c00d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GameScripts::LeaderBoidAgentTypeFactory
 --- !u!1 &2147090430
 GameObject:
   m_ObjectHideFlags: 0
@@ -1550,6 +1539,8 @@ GameObject:
   m_Component:
   - component: {fileID: 2147090432}
   - component: {fileID: 2147090431}
+  - component: {fileID: 2147090434}
+  - component: {fileID: 2147090433}
   m_Layer: 0
   m_Name: ConditionManager
   m_TagString: Untagged
@@ -1570,8 +1561,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ConditionManager
   CurrentCondition: 3
-  agentCount: 10
+  agentCount: 100
   spawnRadius: 15
+  rangedAgentRatio: 0.3
   pureGOAPAgentPrefab: {fileID: 1458949725028823893, guid: 33bdf70a0a34d03488a0e02684ab8b45, type: 3}
   meleeFlockManagerPrefab: {fileID: 7139092808455683938, guid: 36b060e3487235642847cad857696d87, type: 3}
   rangedFlockManagerPrefab: {fileID: 7332952448717128870, guid: e7a2bb4fdbcdc2846bdb2448fef0be6f, type: 3}
@@ -1595,6 +1587,40 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2147090433
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147090430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2bb4f89c107b024196a82fa7ccb11c4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GameScripts::ExperimentRunner
+  experimentDuration: 60
+  transitionDelay: 3
+  conditionsToTest: 010000000200000003000000
+  outputDirectory: 
+  isRunning: 0
+  currentConditionIndex: -1
+  timeRemaining: 0
+  automatedPlayer: {fileID: 49173744}
+--- !u!114 &2147090434
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147090430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9aa75b64f8a29d45beadeb82ddb7913, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GameScripts::BehavioralMetricsCollector
+  sampleInterval: 0.5
+  isRecording: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1608,7 +1634,6 @@ SceneRoots:
   - {fileID: 915581629}
   - {fileID: 49173742}
   - {fileID: 2035265744}
-  - {fileID: 973697511}
   - {fileID: 2147090432}
   - {fileID: 992758491}
   - {fileID: 405681995}

@@ -66,6 +66,7 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     [HideInInspector] public float cooldownTimer;
     [HideInInspector] public Transform targetPlayer;
     [HideInInspector] public bool isScattering;
+    [HideInInspector] public int flockId;
 
     private float currentHealth;
     private bool isDead;
@@ -87,6 +88,52 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     public AttackType AgentAttackType => attackType;
     public GameObject ProjectilePrefab => projectilePrefab;
     public void SetAttackType(AttackType type) { attackType = type; }
+
+    /// <summary>
+    /// Returns all living agents in the same flock (same flockId).
+    /// </summary>
+    public static List<GOAPBoidAgent> GetFlockmates(int id)
+    {
+        var mates = new List<GOAPBoidAgent>();
+        for (int i = 0; i < AllAgents.Count; i++)
+        {
+            if (AllAgents[i].flockId == id)
+                mates.Add(AllAgents[i]);
+        }
+        return mates;
+    }
+
+    /// <summary>
+    /// Returns the centroid of all agents in the given flock.
+    /// </summary>
+    public static Vector3 GetFlockCentroid(int id)
+    {
+        Vector3 centroid = Vector3.zero;
+        int count = 0;
+        for (int i = 0; i < AllAgents.Count; i++)
+        {
+            if (AllAgents[i].flockId == id)
+            {
+                centroid += AllAgents[i].Position;
+                count++;
+            }
+        }
+        return count > 0 ? centroid / count : Vector3.zero;
+    }
+
+    /// <summary>
+    /// Returns the number of agents in the given flock.
+    /// </summary>
+    public static int GetFlockCount(int id)
+    {
+        int count = 0;
+        for (int i = 0; i < AllAgents.Count; i++)
+        {
+            if (AllAgents[i].flockId == id)
+                count++;
+        }
+        return count;
+    }
 
     private void Awake()
     {
@@ -214,6 +261,7 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
         for (int i = 0; i < AllAgents.Count; i++)
         {
             if (AllAgents[i] == this) continue;
+            if (AllAgents[i].flockId != flockId) continue;
 
             Vector3 offset = AllAgents[i].Position - myPos;
             float distSq = offset.sqrMagnitude;
@@ -298,9 +346,15 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     {
         if (isDead) return;
         currentHealth = Mathf.Max(currentHealth - amount, 0f);
+
+        BehavioralMetricsCollector.Instance?.LogEvent(
+            "Damage", gameObject.name, flockId, $"Amount={amount:F1},HP={currentHealth:F1}");
+
         if (currentHealth <= 0f)
         {
             isDead = true;
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "Death", gameObject.name, flockId, "Destroyed");
             Destroy(gameObject);
         }
     }

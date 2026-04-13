@@ -31,9 +31,12 @@ public class PerformanceProfiler : MonoBehaviour
     // Per-frame metrics for export
     private List<FrameMetrics> frameMetricsLog = new List<FrameMetrics>();
 
+    private ConditionManager conditionManager;
+
     private void Start()
     {
         lastFrameTime = Time.realtimeSinceStartup;
+        conditionManager = GetComponent<ConditionManager>();
     }
 
     private void Update()
@@ -81,6 +84,7 @@ public class PerformanceProfiler : MonoBehaviour
         {
             frameNumber = Time.frameCount,
             time = Time.time,
+            condition = conditionManager != null ? conditionManager.CurrentCondition.ToString() : "Unknown",
             fps = currentFPS,
             averageFPS = averageFPS,
             agentCount = activeAgentCount,
@@ -96,8 +100,15 @@ public class PerformanceProfiler : MonoBehaviour
     /// </summary>
     private int CountActiveAgents()
     {
-        // TODO: Integrate with ConditionManager to get accurate agent count per condition
-        // For now, use a simple FindObjectsOfType approach
+        if (conditionManager != null && conditionManager.CurrentCondition == AgentCondition.GOAPWithBOIDSMovement)
+            return GOAPBoidAgent.AllAgents.Count;
+
+        // BoidAgent-based conditions (PureBOIDS, BOIDSWithGOAPLeader)
+        var boids = FindObjectsByType<BoidAgent>(FindObjectsSortMode.None);
+        if (boids.Length > 0)
+            return boids.Length;
+
+        // Fallback for PureGOAP or unknown conditions
         return FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None).Length;
     }
 
@@ -115,11 +126,11 @@ public class PerformanceProfiler : MonoBehaviour
         Profiler.BeginSample("PerformanceProfiler.ExportMetrics");
 
         System.Text.StringBuilder csv = new System.Text.StringBuilder();
-        csv.AppendLine("Frame,Time,FPS,AvgFPS,AgentCount,CPUTimeMs");
+        csv.AppendLine("Frame,Time,Condition,FPS,AvgFPS,AgentCount,CPUTimeMs");
 
         foreach (var frame in frameMetricsLog)
         {
-            csv.AppendLine($"{frame.frameNumber},{frame.time:F3},{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3}");
+            csv.AppendLine($"{frame.frameNumber},{frame.time:F3},{frame.condition},{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3}");
         }
 
         try
@@ -167,6 +178,7 @@ public class PerformanceProfiler : MonoBehaviour
     {
         public int frameNumber;
         public float time;
+        public string condition;
         public float fps;
         public float averageFPS;
         public int agentCount;

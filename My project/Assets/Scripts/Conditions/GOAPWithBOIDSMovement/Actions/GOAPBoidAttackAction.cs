@@ -83,7 +83,12 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
                 {
                     var playerHealth = data.Agent.targetPlayer.GetComponent<PlayerHealth>();
                     if (playerHealth != null)
+                    {
                         playerHealth.TakeDamage(data.Agent.AttackDamage);
+                        BehavioralMetricsCollector.Instance?.LogEvent(
+                            "AttackHit", data.Agent.gameObject.name, data.Agent.flockId,
+                            $"Melee,Dmg={data.Agent.AttackDamage}");
+                    }
                     data.DamageDealt = true;
                 }
 

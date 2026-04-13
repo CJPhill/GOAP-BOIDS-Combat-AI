@@ -13,6 +13,8 @@ public class GOAPBoidFlockSizeSensor : LocalWorldSensorBase
 
     public override SenseValue Sense(IActionReceiver agent, IComponentReference references)
     {
-        return GOAPBoidAgent.AllAgents.Count >= 3 ? 1 : 0;
+        var boidAgent = references.GetCachedComponent<GOAPBoidAgent>();
+        if (boidAgent == null) return 0;
+        return GOAPBoidAgent.GetFlockCount(boidAgent.flockId) >= 3 ? 1 : 0;
     }
 }

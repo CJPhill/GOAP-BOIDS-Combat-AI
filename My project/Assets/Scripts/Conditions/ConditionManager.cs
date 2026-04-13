@@ -12,6 +12,14 @@ using System.Collections.Generic;
 /// </summary>
 public class ConditionManager : MonoBehaviour
 {
+    public static ConditionManager Instance { get; private set; }
+
+    /// <summary>
+    /// True when the active condition uses GOAP for boid-level combat (BOIDSWithGOAPLeader).
+    /// Used by BoidAgent and FlockManager to decide FSM vs GOAP path.
+    /// </summary>
+    public bool UsesGoapForBoids => CurrentCondition == AgentCondition.BOIDSWithGOAPLeader;
+
     [Header("Condition Selection")]
     [Tooltip("The currently active experimental condition. Change this to switch AI architectures.")]
     public AgentCondition CurrentCondition = AgentCondition.PureGOAP;
@@ -51,6 +59,11 @@ public class ConditionManager : MonoBehaviour
     [Tooltip("Reference to the player transform (target for all agents).")]
     public Transform playerTransform;
 
+    private void Awake()
+    {
+        Instance = this;
+    }
+
     private void Start()
     {
         SpawnAgentsForCondition();
@@ -74,6 +87,10 @@ public class ConditionManager : MonoBehaviour
 
             case AgentCondition.BOIDSWithGOAPLeader:
                 StartCoroutine(SpawnBOIDSWithGOAPLeaderFlocks());
+                break;
+
+            case AgentCondition.GOAPWithBOIDSMovement:
+                SpawnGOAPWithBOIDSMovementFlocks();
                 break;
 
             default:
@@ -200,6 +217,70 @@ public class ConditionManager : MonoBehaviour
 
             spawnedAgents.Add(agent);
         }
+    }
+
+    /// <summary>
+    /// Spawns GOAPWithBOIDSMovement agents as separate melee and ranged flocks.
+    /// Each flock has its own flockId so BOIDS forces only apply within the flock.
+    /// </summary>
+    private void SpawnGOAPWithBOIDSMovementFlocks()
+    {
+        GameObject prefab = goapWithBOIDSMovementPrefab;
+        if (prefab == null)
+        {
+            Debug.LogError("[ConditionManager] No prefab assigned for GOAPWithBOIDSMovement!");
+            return;
+        }
+
+        int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+        int meleeCount = agentCount - rangedCount;
+
+        // Spawn melee flock (flockId = 0)
+        for (int i = 0; i < meleeCount; i++)
+        {
+            Vector3 spawnPos = transform.position + GetSpawnOffset(i);
+            Quaternion spawnRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            GameObject agent = Instantiate(prefab, spawnPos, spawnRot, transform);
+            agent.name = $"GOAPBoid_Melee_{i}";
+
+            var gbAgent = agent.GetComponent<GOAPBoidAgent>();
+            if (gbAgent != null)
+            {
+                gbAgent.SetAttackType(AttackType.Melee);
+                gbAgent.flockId = 0;
+            }
+
+            var gbProvider = agent.GetComponent<GoapActionProvider>();
+            if (gbProvider != null && goapBehaviour != null)
+                gbProvider.AgentType = goapBehaviour.GetAgentType("GOAPBoidAgent");
+
+            spawnedAgents.Add(agent);
+        }
+
+        // Spawn ranged flock (flockId = 1), offset from melee
+        Vector3 rangedOffset = Vector3.right * spawnRadius * 0.5f;
+        for (int i = 0; i < rangedCount; i++)
+        {
+            Vector3 spawnPos = transform.position + rangedOffset + GetSpawnOffset(i);
+            Quaternion spawnRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            GameObject agent = Instantiate(prefab, spawnPos, spawnRot, transform);
+            agent.name = $"GOAPBoid_Ranged_{i}";
+
+            var gbAgent = agent.GetComponent<GOAPBoidAgent>();
+            if (gbAgent != null)
+            {
+                gbAgent.SetAttackType(AttackType.Ranged);
+                gbAgent.flockId = 1;
+            }
+
+            var gbProvider = agent.GetComponent<GoapActionProvider>();
+            if (gbProvider != null && goapBehaviour != null)
+                gbProvider.AgentType = goapBehaviour.GetAgentType("GOAPBoidAgent");
+
+            spawnedAgents.Add(agent);
+        }
+
+        Debug.Log($"[ConditionManager] Spawned GOAPWithBOIDSMovement: {meleeCount} melee (flock 0), {rangedCount} ranged (flock 1)");
     }
 
     /// <summary>

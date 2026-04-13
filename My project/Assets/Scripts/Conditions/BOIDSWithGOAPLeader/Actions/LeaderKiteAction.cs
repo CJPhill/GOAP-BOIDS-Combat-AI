@@ -79,6 +79,9 @@ public class LeaderKiteAction : GoapActionBase<LeaderKiteAction.Data>
                     Transform playerTransform = GameObject.FindGameObjectWithTag("Player")?.transform;
                     BoidProjectile bp = proj.GetComponent<BoidProjectile>();
                     bp?.Initialize(fireDir, ProjectileSpeed, ProjectileDamage, playerTransform, ProjectileTurnSpeed);
+                    BehavioralMetricsCollector.Instance?.LogEvent(
+                        "AttackFired", data.Boid.gameObject.name, 0,
+                        $"LeaderKite,Dmg={ProjectileDamage}");
                 }
                 return ActionRunState.Completed;
         }

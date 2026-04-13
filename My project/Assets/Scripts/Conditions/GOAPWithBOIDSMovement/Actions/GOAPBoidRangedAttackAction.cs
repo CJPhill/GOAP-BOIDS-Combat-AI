@@ -92,6 +92,9 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
                     );
                     BoidProjectile bp = proj.GetComponent<BoidProjectile>();
                     bp?.Initialize(dir, ProjectileSpeed, ProjectileDamage, data.Agent.targetPlayer, ProjectileTurnSpeed);
+                    BehavioralMetricsCollector.Instance?.LogEvent(
+                        "AttackFired", data.Agent.gameObject.name, data.Agent.flockId,
+                        $"Ranged,Dmg={ProjectileDamage}");
                 }
                 return ActionRunState.Completed;
         }

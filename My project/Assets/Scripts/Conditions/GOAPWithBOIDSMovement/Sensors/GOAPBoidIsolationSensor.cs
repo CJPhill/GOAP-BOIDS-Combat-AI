@@ -17,13 +17,9 @@ public class GOAPBoidIsolationSensor : LocalWorldSensorBase
     public override SenseValue Sense(IActionReceiver agent, IComponentReference references)
     {
         var boidAgent = references.GetCachedComponent<GOAPBoidAgent>();
-        if (boidAgent == null || GOAPBoidAgent.AllAgents.Count <= 1) return 0;
+        if (boidAgent == null || GOAPBoidAgent.GetFlockCount(boidAgent.flockId) <= 1) return 0;
 
-        Vector3 centroid = Vector3.zero;
-        for (int i = 0; i < GOAPBoidAgent.AllAgents.Count; i++)
-            centroid += GOAPBoidAgent.AllAgents[i].Position;
-        centroid /= GOAPBoidAgent.AllAgents.Count;
-
+        Vector3 centroid = GOAPBoidAgent.GetFlockCentroid(boidAgent.flockId);
         float dist = Vector3.Distance(boidAgent.Position, centroid);
         return dist > IsolationThreshold ? 1 : 0;
     }
