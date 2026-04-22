@@ -29,6 +29,7 @@ public static class GoalPriorityResolver
         float playerDist,
         bool isIsolated,
         int flockCount,
+        bool attackSlotAvailable = true,
         float criticalHealthThreshold = 0.15f,
         float kiteMinDistance = 8f,
         float guardInnerRange = 15f,
@@ -40,7 +41,7 @@ public static class GoalPriorityResolver
         if (playerNearby && healthPercent < 0.3f)
             return GoalType.Flee;
 
-        if (playerNearby && cooldownReady)
+        if (playerNearby && cooldownReady && attackSlotAvailable)
         {
             if (isRanged && playerDist < kiteMinDistance)
                 return GoalType.Kite;
@@ -52,7 +53,8 @@ public static class GoalPriorityResolver
         if (isIsolated)
             return GoalType.Regroup;
 
-        if (playerNearby && flockCount >= 3 && !cooldownReady)
+        // No attack slot or cooldown not ready — flank instead
+        if (playerNearby && flockCount >= 3)
             return GoalType.Flank;
 
         if (playerDist >= guardInnerRange && playerDist <= guardOuterRange)
@@ -78,10 +80,11 @@ public static class GoalPriorityResolver
         float guardInnerRange = 15f,
         float guardOuterRange = 30f)
     {
-        // Same priority logic — leader and GOAPBoid share the same decision tree
+        // Same priority logic — leader always has an attack slot
         return ResolveGOAPBoidGoal(
             healthPercent, playerNearby, cooldownReady, isRanged,
             playerDist, isIsolated, flockCount,
+            attackSlotAvailable: true,
             criticalHealthThreshold, kiteMinDistance, guardInnerRange, guardOuterRange);
     }
 }

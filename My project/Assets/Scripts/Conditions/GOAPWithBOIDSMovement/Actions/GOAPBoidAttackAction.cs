@@ -26,6 +26,9 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
         public float PhaseTimer { get; set; }
         public Vector3 ChargeDirection { get; set; }
         public bool DamageDealt { get; set; }
+        public bool SlotAcquired { get; set; }
+        // Direction from player toward this agent (XZ) — used to spread attackers in an arc
+        public Vector3 PreferredApproachDir { get; set; }
     }
 
     public override void Created() { }
@@ -35,16 +38,32 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
         data.CurrentPhase = Phase.Approach;
         data.PhaseTimer = 0f;
         data.DamageDealt = false;
+        data.SlotAcquired = GOAPBoidAgent.RequestAttackSlot(data.Agent.flockId);
 
         if (data.Target is TransformTarget transformTarget)
             data.Agent.targetPlayer = transformTarget.Transform;
 
-        GOAPBoidAgent.SwarmAttackCooldown = data.Agent.SwarmCooldownDuration;
+        // Compute natural approach direction from the player toward this agent (XZ only).
+        // Stored at action-start so each attacker approaches from its own angle, preventing pile-up.
+        if (data.Agent.targetPlayer != null)
+        {
+            Vector3 toAgent = data.Agent.Position - data.Agent.targetPlayer.position;
+            toAgent.y = 0f;
+            data.PreferredApproachDir = toAgent.sqrMagnitude > 0.001f ? toAgent.normalized : Vector3.forward;
+        }
+        else
+        {
+            data.PreferredApproachDir = Vector3.forward;
+        }
+
+        // Only set swarm cooldown when this agent actually got a slot
+        if (data.SlotAcquired)
+            GOAPBoidAgent.SetFlockCooldown(data.Agent.flockId, data.Agent.SwarmCooldownDuration);
     }
 
     public override IActionRunState Perform(IMonoAgent agent, Data data, IActionContext context)
     {
-        if (data.Target == null || data.Agent.targetPlayer == null)
+        if (!data.SlotAcquired || data.Target == null || data.Agent.targetPlayer == null)
             return ActionRunState.Stop;
 
         Vector3 agentPos = data.Agent.Position;
@@ -54,7 +73,9 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
         switch (data.CurrentPhase)
         {
             case Phase.Approach:
-                data.Agent.SteerToward(targetPos);
+                // Steer toward a point offset from the player in this agent's preferred direction.
+                // This spreads simultaneous attackers in an arc rather than funneling to the same spot.
+                data.Agent.SteerToward(targetPos + data.PreferredApproachDir * DamageContactDistance);
                 if (distance <= TriggerDistance)
                 {
                     data.CurrentPhase = Phase.WindUp;
@@ -103,13 +124,30 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
     public override void Complete(IMonoAgent agent, Data data)
     {
         data.Agent.cooldownTimer = data.Agent.AttackCooldown;
-        GOAPBoidAgent.SwarmAttackCooldown = data.Agent.SwarmCooldownDuration;
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.SetFlockCooldown(data.Agent.flockId, data.Agent.SwarmCooldownDuration);
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
     }
 
-    public override void Stop(IMonoAgent agent, Data data) { }
+    public override void Stop(IMonoAgent agent, Data data)
+    {
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
+    }
 
     public override void End(IMonoAgent agent, Data data)
     {
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
         data.Agent.targetPlayer = null;
     }
 }

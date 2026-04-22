@@ -47,7 +47,7 @@ public class GOAPBoidBrain : MonoBehaviour
 
         // Goal priority: Scatter > Flee > Attack/Kite > Regroup > Flank > Guard > Wander
         float healthPercent = agent.HealthPercent;
-        bool cooldownReady = agent.cooldownTimer <= 0f && GOAPBoidAgent.SwarmAttackCooldown <= 0f;
+        bool cooldownReady = agent.cooldownTimer <= 0f && GOAPBoidAgent.IsFlockCooldownReady(agent.flockId);
         bool isRanged = agent.AgentAttackType == AttackType.Ranged;
         float playerDist = playerTransform != null
             ? Vector3.Distance(transform.position, playerTransform.position)
@@ -62,9 +62,11 @@ public class GOAPBoidBrain : MonoBehaviour
             isIsolated = Vector3.Distance(transform.position, centroid) > 20f;
         }
 
+        bool slotAvailable = GOAPBoidAgent.CanAttack(agent.flockId);
+
         var goal = GoalPriorityResolver.ResolveGOAPBoidGoal(
             healthPercent, playerNearby, cooldownReady, isRanged,
-            playerDist, isIsolated, flockCount);
+            playerDist, isIsolated, flockCount, slotAvailable);
 
         currentGoalType = goal;
 

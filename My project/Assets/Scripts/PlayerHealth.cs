@@ -14,6 +14,9 @@ public class PlayerHealth : MonoBehaviour
 
     public float HealthPercent => maxHealth > 0f ? currentHealth / maxHealth : 0f;
 
+    /// <summary>Set true by AutomatedPlayer during a dodge roll — blocks incoming damage.</summary>
+    public bool IsInvincible { get; set; }
+
     private void Awake()
     {
         currentHealth = maxHealth;
@@ -21,6 +24,8 @@ public class PlayerHealth : MonoBehaviour
 
     public void TakeDamage(float amount)
     {
+        if (IsInvincible) return;
+
         currentHealth = Mathf.Max(currentHealth - amount, 0f);
 
         BehavioralMetricsCollector.Instance?.LogEvent(

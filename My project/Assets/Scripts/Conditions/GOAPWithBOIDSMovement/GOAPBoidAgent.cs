@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Profiling;
 
@@ -14,11 +15,67 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
 {
     public static readonly List<GOAPBoidAgent> AllAgents = new List<GOAPBoidAgent>();
 
-    // Swarm-wide attack cooldown — only one attack per swarm pass
-    public static float SwarmAttackCooldown;
+    // Per-flock swarm cooldown — each flock volleys independently
+    private static readonly Dictionary<int, float> swarmCooldownByFlock = new Dictionary<int, float>();
+
     [Header("Swarm Attack")]
     [SerializeField] private float swarmCooldownDuration = 3f;
+    [SerializeField] private int maxSimultaneousAttackers = 3;
     public float SwarmCooldownDuration => swarmCooldownDuration;
+
+    // Per-flock attack slot tracking
+    private static readonly Dictionary<int, int> currentAttackersByFlock = new Dictionary<int, int>();
+    private static readonly Dictionary<int, int> maxAttackersByFlock = new Dictionary<int, int>();
+
+    public static void ResetAttackSlots()
+    {
+        currentAttackersByFlock.Clear();
+        maxAttackersByFlock.Clear();
+        swarmCooldownByFlock.Clear();
+    }
+
+    /// <summary>
+    /// Returns true if the flock's swarm cooldown has expired.
+    /// </summary>
+    public static bool IsFlockCooldownReady(int flockId)
+    {
+        return !swarmCooldownByFlock.TryGetValue(flockId, out float cd) || cd <= 0f;
+    }
+
+    /// <summary>
+    /// Sets the swarm cooldown for a specific flock.
+    /// </summary>
+    public static void SetFlockCooldown(int flockId, float duration)
+    {
+        swarmCooldownByFlock[flockId] = duration;
+    }
+
+    public static bool CanAttack(int flockId)
+    {
+        if (!IsFlockCooldownReady(flockId))
+            return false;
+        int current = currentAttackersByFlock.TryGetValue(flockId, out int c) ? c : 0;
+        int max = maxAttackersByFlock.TryGetValue(flockId, out int m) ? m : 3;
+        return current < max;
+    }
+
+    public static bool RequestAttackSlot(int flockId)
+    {
+        if (!IsFlockCooldownReady(flockId))
+            return false;
+        int current = currentAttackersByFlock.TryGetValue(flockId, out int c) ? c : 0;
+        int max = maxAttackersByFlock.TryGetValue(flockId, out int m) ? m : 3;
+        if (current >= max)
+            return false;
+        currentAttackersByFlock[flockId] = current + 1;
+        return true;
+    }
+
+    public static void ReleaseAttackSlot(int flockId)
+    {
+        if (currentAttackersByFlock.TryGetValue(flockId, out int c))
+            currentAttackersByFlock[flockId] = Mathf.Max(c - 1, 0);
+    }
 
     [Header("Movement Settings")]
     [SerializeField] private float maxSpeed = 8f;
@@ -158,7 +215,12 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
         }
     }
 
-    private void OnEnable() { AllAgents.Add(this); }
+    private void OnEnable()
+    {
+        AllAgents.Add(this);
+        maxAttackersByFlock[flockId] = maxSimultaneousAttackers;
+    }
+
     private void OnDisable() { AllAgents.Remove(this); }
 
     private void Update()
@@ -167,8 +229,23 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
 
         if (cooldownTimer > 0f)
             cooldownTimer -= Time.deltaTime;
-        if (SwarmAttackCooldown > 0f)
-            SwarmAttackCooldown -= Time.deltaTime;
+
+        // Tick per-flock swarm cooldown (only first agent per flock ticks to avoid multi-decrement)
+        if (swarmCooldownByFlock.ContainsKey(flockId) && swarmCooldownByFlock[flockId] > 0f)
+        {
+            // Only tick once per flock per frame: the first agent in AllAgents with this flockId
+            bool isFirstInFlock = true;
+            for (int i = 0; i < AllAgents.Count; i++)
+            {
+                if (AllAgents[i].flockId == flockId)
+                {
+                    isFirstInFlock = (AllAgents[i] == this);
+                    break;
+                }
+            }
+            if (isFirstInFlock)
+                swarmCooldownByFlock[flockId] -= Time.deltaTime;
+        }
 
         // GOAP actions set velocity via SteerToward/SetVelocity.
         // BOIDS forces layer on top — always active.

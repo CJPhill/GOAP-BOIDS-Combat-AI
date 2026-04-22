@@ -12,6 +12,7 @@ public class LeaderGoapBrain : MonoBehaviour
 {
     [SerializeField] private float playerDetectionRange = 30f;
     [SerializeField] private string playerTag = "Player";
+    [SerializeField] private float maxLeaderSeparation = 12f;
 
     private BoidAgent boid;
     private BoidGoapBrain brain;
@@ -106,6 +107,20 @@ public class LeaderGoapBrain : MonoBehaviour
                 provider.RequestGoal<LeaderGuardGoal>(); break;
             default:
                 provider.RequestGoal<LeaderWanderGoal>(); break;
+        }
+
+        // Leash: if leader is overriding movement and has outrun the flock, slow down
+        // so followers can catch up rather than the leader abandoning the group.
+        if (brain != null && brain.isMovementOverridden && boid.manager != null)
+        {
+            Vector3 flockCenter = boid.manager.GetFlockCenter();
+            float dist = Vector3.Distance(transform.position, flockCenter);
+            if (dist > maxLeaderSeparation)
+            {
+                float excess = dist - maxLeaderSeparation;
+                float slowFactor = Mathf.Clamp01(1f - excess / maxLeaderSeparation);
+                boid.velocity *= slowFactor;
+            }
         }
     }
 }

@@ -25,6 +25,7 @@ public class GOAPBoidKiteAction : GoapActionBase<GOAPBoidKiteAction.Data>
         [GetComponent] public GOAPBoidAgent Agent { get; set; }
         public Phase CurrentPhase { get; set; }
         public float KiteTimer { get; set; }
+        public bool SlotAcquired { get; set; }
     }
 
     public override void Created() { }
@@ -33,16 +34,18 @@ public class GOAPBoidKiteAction : GoapActionBase<GOAPBoidKiteAction.Data>
     {
         data.CurrentPhase = Phase.Retreat;
         data.KiteTimer = 8f;
+        data.SlotAcquired = GOAPBoidAgent.RequestAttackSlot(data.Agent.flockId);
 
         if (data.Target is TransformTarget transformTarget)
             data.Agent.targetPlayer = transformTarget.Transform;
 
-        GOAPBoidAgent.SwarmAttackCooldown = data.Agent.SwarmCooldownDuration;
+        if (data.SlotAcquired)
+            GOAPBoidAgent.SetFlockCooldown(data.Agent.flockId, data.Agent.SwarmCooldownDuration);
     }
 
     public override IActionRunState Perform(IMonoAgent agent, Data data, IActionContext context)
     {
-        if (data.Target == null || data.Agent.targetPlayer == null)
+        if (!data.SlotAcquired || data.Target == null || data.Agent.targetPlayer == null)
             return ActionRunState.Stop;
 
         Vector3 agentPos = data.Agent.Position;
@@ -89,13 +92,30 @@ public class GOAPBoidKiteAction : GoapActionBase<GOAPBoidKiteAction.Data>
     public override void Complete(IMonoAgent agent, Data data)
     {
         data.Agent.cooldownTimer = data.Agent.AttackCooldown;
-        GOAPBoidAgent.SwarmAttackCooldown = data.Agent.SwarmCooldownDuration;
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.SetFlockCooldown(data.Agent.flockId, data.Agent.SwarmCooldownDuration);
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
     }
 
-    public override void Stop(IMonoAgent agent, Data data) { }
+    public override void Stop(IMonoAgent agent, Data data)
+    {
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
+    }
 
     public override void End(IMonoAgent agent, Data data)
     {
+        if (data.SlotAcquired)
+        {
+            GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
+            data.SlotAcquired = false;
+        }
         data.Agent.targetPlayer = null;
     }
 }

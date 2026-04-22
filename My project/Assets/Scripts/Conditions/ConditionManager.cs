@@ -48,6 +48,11 @@ public class ConditionManager : MonoBehaviour
     [SerializeField] private GameObject boidsWithGOAPLeaderPrefab;
     [SerializeField] private GameObject goapWithBOIDSMovementPrefab;
 
+    [Header("Reproducibility")]
+    [Tooltip("Use a fixed seed so spawns and Random-based behavior are identical across runs.")]
+    [SerializeField] private bool useFixedSeed = true;
+    [SerializeField] private int randomSeed = 42;
+
     [Header("Runtime State")]
     [SerializeField] private List<GameObject> spawnedAgents = new List<GameObject>();
 
@@ -76,6 +81,9 @@ public class ConditionManager : MonoBehaviour
     public void SpawnAgentsForCondition()
     {
         Profiler.BeginSample("ConditionManager.SpawnAgentsForCondition");
+
+        if (useFixedSeed)
+            Random.InitState(randomSeed);
 
         ClearAgents();
 
@@ -294,6 +302,7 @@ public class ConditionManager : MonoBehaviour
                 Destroy(agent);
         }
         spawnedAgents.Clear();
+        GOAPBoidAgent.ResetAttackSlots();
     }
 
     private GameObject GetPrefabForCondition(AgentCondition condition)
