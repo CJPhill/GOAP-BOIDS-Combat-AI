@@ -83,9 +83,13 @@ public class LeaderGoapBrain : MonoBehaviour
 
         if (goal != previousGoalType)
         {
-            int leaderId = 0; // Leader is always boid[0]
+            // Use the flock's type as the flockId so melee-leader events land in
+            // flockId=0 and ranged-leader events land in flockId=1. Previously
+            // hardcoded to 0 which collapsed both leaders' events into one bucket,
+            // leaving ReactionRangedMs perpetually -1 in trial summaries.
+            int flockId = boid.settings != null ? (int)boid.settings.flockType : 0;
             BehavioralMetricsCollector.Instance?.LogEvent(
-                "GoalChange", gameObject.name, leaderId, $"{previousGoalType}→{goal}");
+                "GoalChange", gameObject.name, flockId, $"{previousGoalType}→{goal}");
             previousGoalType = goal;
         }
 

@@ -125,6 +125,14 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     [HideInInspector] public bool isScattering;
     [HideInInspector] public int flockId;
 
+    // Flock-level glue (set by GOAPBoidFlockManager when condition 4 is spawned).
+    // Null in tests that instantiate bare agents — all manager paths null-check.
+    [HideInInspector] public GOAPBoidFlockManager flockManager;
+    // Formation slot written by the manager during ranged Forming/Locked phases;
+    // the ranged GOAP action steers to this when FlockFormationActive is true.
+    [HideInInspector] public Vector3 FlockFormationTarget;
+    [HideInInspector] public bool FlockFormationActive;
+
     private float currentHealth;
     private bool isDead;
     private RoomBounds roomBounds;
@@ -134,7 +142,7 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
 
     // IEnemy interface
     public bool IsDead => isDead;
-    public float HealthPercent => currentHealth / maxHealth;
+    public float HealthPercent => flockManager != null ? flockManager.HealthPercent : currentHealth / maxHealth;
     public Vector3 Position => cachedTransform.position;
     public Vector3 Velocity => velocity;
 
@@ -379,6 +387,21 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
             }
         }
 
+        // Centroid leash (manager-driven). Kicks in when this agent drifts past
+        // LeashRadius from the flock's cached centroid — acts as a failsafe when
+        // GOAP steers an agent farther than local cohesion can reach.
+        if (flockManager != null && !isScattering)
+        {
+            Vector3 toCentroid = flockManager.Centroid - myPos;
+            float dist = toCentroid.magnitude;
+            float leash = flockManager.LeashRadius;
+            if (dist > leash && leash > 0.001f)
+            {
+                float overshoot = (dist - leash) / leash;
+                result += toCentroid.normalized * overshoot * flockManager.LeashStrength;
+            }
+        }
+
         Profiler.EndSample();
         return result;
     }
@@ -422,8 +445,20 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     public void TakeDamage(float amount)
     {
         if (isDead) return;
-        currentHealth = Mathf.Max(currentHealth - amount, 0f);
 
+        // When a flock manager is attached (condition 4 in-scene play), damage pools
+        // into the flock and SyncBoidCountToHealth despawns tail agents. Individual
+        // HP stays at max so individual-HP sensors don't mis-report.
+        if (flockManager != null)
+        {
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "Damage", gameObject.name, flockId, $"Amount={amount:F1},Pooled");
+            flockManager.TakeDamage(amount);
+            return;
+        }
+
+        // Fallback for tests/harnesses that spawn bare agents with no manager.
+        currentHealth = Mathf.Max(currentHealth - amount, 0f);
         BehavioralMetricsCollector.Instance?.LogEvent(
             "Damage", gameObject.name, flockId, $"Amount={amount:F1},HP={currentHealth:F1}");
 
@@ -434,6 +469,15 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
                 "Death", gameObject.name, flockId, "Destroyed");
             Destroy(gameObject);
         }
+    }
+
+    private void OnDestroy()
+    {
+        // Manager may have destroyed this via SyncBoidCountToHealth; it may also
+        // already be gone during ClearAgents teardown. Unity's == overload treats
+        // fake-null (destroyed) refs as null, so this guards both cases.
+        if (flockManager != null)
+            flockManager.UnregisterAgent(this);
     }
 
     private void OnDrawGizmos()

@@ -229,7 +229,7 @@ Transform:
   m_GameObject: {fileID: 49173738}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -7.69, y: 5.49, z: 16.8}
+  m_LocalPosition: {x: -49.71, y: 5.49, z: 28.89}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -261,12 +261,40 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::AutomatedPlayer
   moveSpeed: 6
-  directionChangeInterval: 3
-  approachChance: 0.35
-  pauseChance: 0.15
-  retreatChance: 0.7
+  rotationSpeed: 10
+  wanderWeight: 0.1
+  approachWeight: 0.25
+  circleStrafeWeight: 0.25
+  hitAndRunWeight: 0.2
+  standAndFightWeight: 0.12
+  orbitRadius: 9
+  orbitSpeed: 55
+  kiteRange: 16
   retreatHealthThreshold: 0.4
   retreatDuration: 4
+  lightAttackRange: 7
+  lightAttackDamage: 15
+  lightAttackCooldown: 0.55
+  lightAttackConeHalfAngle: 65
+  maxComboCount: 3
+  comboWindowDuration: 1.3
+  heavyAttackRange: 6
+  heavyAttackDamage: 10
+  heavyAttackCooldown: 2.5
+  heavyWindUpDuration: 0.5
+  aoeBurstRange: 8
+  aoeBurstDamage: 22
+  aoeBurstCooldown: 7
+  rangedThrowRange: 28
+  rangedThrowDamage: 20
+  rangedThrowCooldown: 2.8
+  dodgeSpeedMultiplier: 3.2
+  dodgeDuration: 0.35
+  dodgeCooldown: 1
+  enemyLayerMask:
+    serializedVersion: 2
+    m_Bits: 0
+  drawDebug: 0
 --- !u!1 &405681993
 GameObject:
   m_ObjectHideFlags: 0
@@ -1541,6 +1569,7 @@ GameObject:
   - component: {fileID: 2147090431}
   - component: {fileID: 2147090434}
   - component: {fileID: 2147090433}
+  - component: {fileID: 2147090435}
   m_Layer: 0
   m_Name: ConditionManager
   m_TagString: Untagged
@@ -1569,6 +1598,9 @@ MonoBehaviour:
   rangedFlockManagerPrefab: {fileID: 7332952448717128870, guid: e7a2bb4fdbcdc2846bdb2448fef0be6f, type: 3}
   boidsWithGOAPLeaderPrefab: {fileID: 0}
   goapWithBOIDSMovementPrefab: {fileID: 1458949725028823893, guid: b5b2e4ba7071511458866e72b376f001, type: 3}
+  useFixedSeed: 1
+  randomSeed: 42
+  comparisonHPPerFlock: 3000
   spawnedAgents: []
   goapBehaviour: {fileID: 2035265743}
   playerTransform: {fileID: 0}
@@ -1600,13 +1632,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
+  runsPerCondition: 10
+  baseSeed: 42
   transitionDelay: 3
   conditionsToTest: 010000000200000003000000
   outputDirectory: 
   isRunning: 0
+  currentRunIndex: -1
   currentConditionIndex: -1
   timeRemaining: 0
+  lastOutcome: 
   automatedPlayer: {fileID: 49173744}
+  conditionManager: {fileID: 2147090431}
+  metricsCollector: {fileID: 2147090434}
+  performanceProfiler: {fileID: 2147090435}
 --- !u!114 &2147090434
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1621,6 +1660,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: GameScripts::BehavioralMetricsCollector
   sampleInterval: 0.5
   isRecording: 0
+--- !u!114 &2147090435
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147090430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26b2c7c92467a3a4fa0419f7a021144a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GameScripts::PerformanceProfiler
+  fpsAveragingWindow: 10
+  enableDetailedProfiling: 1
+  currentFPS: 0
+  averageFPS: 0
+  activeAgentCount: 0
+  cpuTimeMs: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

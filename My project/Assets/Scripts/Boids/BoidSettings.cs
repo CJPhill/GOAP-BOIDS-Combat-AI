@@ -58,6 +58,18 @@ public class BoidSettings : ScriptableObject
     [Tooltip("Fraction of boids kept alive as a last stand until flock health hits 0")]
     public float minSurvivorFraction = 0.35f;
 
+    [Header("Parity Behaviors (Flee / Scatter / Flank)")]
+    [Tooltip("Health fraction below which the flock enters Fleeing state (above criticalHealthThreshold)")]
+    public float fleeHealthThreshold = 0.3f;
+    [Tooltip("Speed multiplier during Fleeing state")]
+    public float fleeSpeedMultiplier = 1.3f;
+    [Tooltip("How long Scattering lasts before reverting to Fleeing/Engaging (seconds)")]
+    public float scatterDuration = 3f;
+    [Tooltip("Multiplier applied to cohesionWeight during Regrouping state")]
+    public float regroupCohesionMultiplier = 3f;
+    [Tooltip("Angular offset (degrees) applied to target-seek direction during Flanking")]
+    public float flankAngleDegrees = 60f;
+
     [Header("Ranged Attack (Flock Coordinated)")]
     public float flockAttackTriggerDistance = 12f;
     public float formationRingRadius = 5f;

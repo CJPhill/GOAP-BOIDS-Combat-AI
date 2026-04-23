@@ -48,10 +48,80 @@ public class ConditionManager : MonoBehaviour
     [SerializeField] private GameObject boidsWithGOAPLeaderPrefab;
     [SerializeField] private GameObject goapWithBOIDSMovementPrefab;
 
+    /// <summary>
+    /// Public accessor so PlayMode visual tests can fetch the condition 4 prefab
+    /// from the scene's ConditionManager without needing reflection.
+    /// </summary>
+    public GameObject GOAPWithBOIDSMovementPrefab => goapWithBOIDSMovementPrefab;
+
+    /// <summary>
+    /// True when every flock spawned for the current condition is dead.
+    /// Checks both FlockManager (cond 2/3) and GOAPBoidFlockManager (cond 4).
+    /// Used by ExperimentRunner as a trial-termination condition.
+    /// </summary>
+    public bool AllFlocksDead
+    {
+        get
+        {
+            bool anyFlockFound = false;
+            for (int i = 0; i < spawnedAgents.Count; i++)
+            {
+                var go = spawnedAgents[i];
+                if (go == null) continue;
+
+                var pureFlock = go.GetComponent<FlockManager>();
+                if (pureFlock != null)
+                {
+                    anyFlockFound = true;
+                    if (!pureFlock.IsDead) return false;
+                    continue;
+                }
+
+                var goapFlock = go.GetComponent<GOAPBoidFlockManager>();
+                if (goapFlock != null)
+                {
+                    anyFlockFound = true;
+                    if (!goapFlock.IsDead) return false;
+                }
+            }
+            // If no flock managers exist (e.g. PureGOAP individual spawn), treat as not-dead
+            // so the trial runs its full duration instead of ending instantly.
+            return anyFlockFound;
+        }
+    }
+
+    /// <summary>
+    /// Reseeds Unity's Random stream and the serialized randomSeed field so this
+    /// trial is reproducible from (baseSeed + run_index). Called by ExperimentRunner
+    /// before each trial; reaches every Awake/OnEnable that consumes Random.
+    /// </summary>
+    public void SetSeed(int seed)
+    {
+        randomSeed = seed;
+        useFixedSeed = true;
+        Random.InitState(seed);
+    }
+
+    /// <summary>
+    /// Overrides the spawn target size for the next SpawnAgentsForCondition call.
+    /// ExperimentRunner uses this to sweep flock sizes in a single batch.
+    /// </summary>
+    public void SetAgentCount(int count)
+    {
+        agentCount = Mathf.Max(1, count);
+    }
+
+    public int AgentCount => agentCount;
+
     [Header("Reproducibility")]
     [Tooltip("Use a fixed seed so spawns and Random-based behavior are identical across runs.")]
     [SerializeField] private bool useFixedSeed = true;
     [SerializeField] private int randomSeed = 42;
+
+    [Header("Comparison Parity")]
+    [Tooltip("HP pool applied to each flock manager in conditions 2, 3, 4 so the only " +
+             "variable across conditions is decision architecture. Must match GOAPBoidFlockManager.maxFlockHealth.")]
+    [SerializeField] private float comparisonHPPerFlock = 3000f;
 
     [Header("Runtime State")]
     [SerializeField] private List<GameObject> spawnedAgents = new List<GameObject>();
@@ -67,6 +137,13 @@ public class ConditionManager : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+
+        // Seed at Awake — earliest hook — so any pre-existing scene GameObject's
+        // Awake/OnEnable (bob/weave phase offsets, random initial velocities, etc.)
+        // consumes from the seeded stream. SpawnAgentsForCondition re-seeds before
+        // spawning so both passes start from the same state.
+        if (useFixedSeed)
+            Random.InitState(randomSeed);
     }
 
     private void Start()
@@ -116,10 +193,17 @@ public class ConditionManager : MonoBehaviour
     /// </summary>
     private void SpawnPureBOIDSFlocks()
     {
+        // Apply thesis parity: same headcount + HP pool as conditions 3 & 4.
+        int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+        int meleeCount = agentCount - rangedCount;
+
         if (meleeFlockManagerPrefab != null)
         {
             GameObject melee = Instantiate(meleeFlockManagerPrefab, transform.position, Quaternion.identity, transform);
             melee.name = "PureBOIDS_MeleeFlockManager";
+            // Overrides must be set BEFORE Start() fires; Instantiate runs Awake
+            // synchronously but defers Start to next frame — safe window.
+            melee.GetComponent<FlockManager>()?.ApplyComparisonOverrides(meleeCount, comparisonHPPerFlock);
             spawnedAgents.Add(melee);
         }
 
@@ -129,6 +213,7 @@ public class ConditionManager : MonoBehaviour
             Vector3 rangedPos = transform.position + Vector3.right * spawnRadius * 0.5f;
             GameObject ranged = Instantiate(rangedFlockManagerPrefab, rangedPos, Quaternion.identity, transform);
             ranged.name = "PureBOIDS_RangedFlockManager";
+            ranged.GetComponent<FlockManager>()?.ApplyComparisonOverrides(rangedCount, comparisonHPPerFlock);
             spawnedAgents.Add(ranged);
         }
 
@@ -145,6 +230,10 @@ public class ConditionManager : MonoBehaviour
     /// </summary>
     private IEnumerator SpawnBOIDSWithGOAPLeaderFlocks()
     {
+        // Parity with conditions 2 & 4 — same headcount + HP pool.
+        int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
+        int meleeCount = agentCount - rangedCount;
+
         // Spawn FlockManagers (same prefabs as PureBOIDS)
         List<FlockManager> managers = new List<FlockManager>();
 
@@ -152,6 +241,7 @@ public class ConditionManager : MonoBehaviour
         {
             GameObject melee = Instantiate(meleeFlockManagerPrefab, transform.position, Quaternion.identity, transform);
             melee.name = "LeaderBOIDS_MeleeFlockManager";
+            melee.GetComponent<FlockManager>()?.ApplyComparisonOverrides(meleeCount, comparisonHPPerFlock);
             spawnedAgents.Add(melee);
             managers.Add(melee.GetComponent<FlockManager>());
         }
@@ -161,6 +251,7 @@ public class ConditionManager : MonoBehaviour
             Vector3 rangedPos = transform.position + Vector3.right * spawnRadius * 0.5f;
             GameObject ranged = Instantiate(rangedFlockManagerPrefab, rangedPos, Quaternion.identity, transform);
             ranged.name = "LeaderBOIDS_RangedFlockManager";
+            ranged.GetComponent<FlockManager>()?.ApplyComparisonOverrides(rangedCount, comparisonHPPerFlock);
             spawnedAgents.Add(ranged);
             managers.Add(ranged.GetComponent<FlockManager>());
         }
@@ -243,6 +334,12 @@ public class ConditionManager : MonoBehaviour
         int rangedCount = Mathf.RoundToInt(agentCount * rangedAgentRatio);
         int meleeCount = agentCount - rangedCount;
 
+        // Spawn one flock manager per flock — these own pooled HP, centroid,
+        // leash, and coordinated attack phases for GOAPWithBOIDSMovement.
+        var meleeManager = CreateFlockManager("GOAPBoidFlock_Melee", FlockType.Melee, 0, meleeCount, transform.position);
+        Vector3 rangedOffset = Vector3.right * spawnRadius * 0.5f;
+        var rangedManager = CreateFlockManager("GOAPBoidFlock_Ranged", FlockType.Ranged, 1, rangedCount, transform.position + rangedOffset);
+
         // Spawn melee flock (flockId = 0)
         for (int i = 0; i < meleeCount; i++)
         {
@@ -256,6 +353,7 @@ public class ConditionManager : MonoBehaviour
             {
                 gbAgent.SetAttackType(AttackType.Melee);
                 gbAgent.flockId = 0;
+                meleeManager?.RegisterAgent(gbAgent);
             }
 
             var gbProvider = agent.GetComponent<GoapActionProvider>();
@@ -266,7 +364,6 @@ public class ConditionManager : MonoBehaviour
         }
 
         // Spawn ranged flock (flockId = 1), offset from melee
-        Vector3 rangedOffset = Vector3.right * spawnRadius * 0.5f;
         for (int i = 0; i < rangedCount; i++)
         {
             Vector3 spawnPos = transform.position + rangedOffset + GetSpawnOffset(i);
@@ -279,6 +376,7 @@ public class ConditionManager : MonoBehaviour
             {
                 gbAgent.SetAttackType(AttackType.Ranged);
                 gbAgent.flockId = 1;
+                rangedManager?.RegisterAgent(gbAgent);
             }
 
             var gbProvider = agent.GetComponent<GoapActionProvider>();
@@ -289,6 +387,22 @@ public class ConditionManager : MonoBehaviour
         }
 
         Debug.Log($"[ConditionManager] Spawned GOAPWithBOIDSMovement: {meleeCount} melee (flock 0), {rangedCount} ranged (flock 1)");
+    }
+
+    /// <summary>
+    /// Create and configure a GOAPBoidFlockManager GameObject for condition 4.
+    /// Manager GO is parented to this ConditionManager so ClearAgents tears it
+    /// down along with the agents it owns.
+    /// </summary>
+    private GOAPBoidFlockManager CreateFlockManager(string name, FlockType type, int id, int size, Vector3 position)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(transform);
+        go.transform.position = position;
+        var mgr = go.AddComponent<GOAPBoidFlockManager>();
+        mgr.Configure(type, id, size);
+        spawnedAgents.Add(go); // reuse existing cleanup path
+        return mgr;
     }
 
     /// <summary>

@@ -43,6 +43,11 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
         if (data.Target is TransformTarget transformTarget)
             data.Agent.targetPlayer = transformTarget.Transform;
 
+        // Hand the target to the flock manager so it can run its synchronized
+        // melee wave in LateUpdate while this agent runs its own phases.
+        if (data.Agent.flockManager != null && data.Agent.targetPlayer != null)
+            data.Agent.flockManager.NotifyTargetAcquired(data.Agent.targetPlayer);
+
         // Compute natural approach direction from the player toward this agent (XZ only).
         // Stored at action-start so each attacker approaches from its own angle, preventing pile-up.
         if (data.Agent.targetPlayer != null)
@@ -69,6 +74,18 @@ public class GOAPBoidAttackAction : GoapActionBase<GOAPBoidAttackAction.Data>
         Vector3 agentPos = data.Agent.Position;
         Vector3 targetPos = data.Target.Position;
         float distance = Vector3.Distance(agentPos, targetPos);
+
+        // Flock-wide melee wave sync. When the manager enters Charging, every
+        // in-flight melee attacker snaps to Charge so the surge lands together.
+        var mgr = data.Agent.flockManager;
+        if (mgr != null
+            && data.CurrentPhase != Phase.Charge
+            && mgr.CurrentMeleePhase == GOAPBoidFlockManager.MeleeAttackPhase.Charging)
+        {
+            data.ChargeDirection = (targetPos - agentPos).normalized;
+            data.CurrentPhase = Phase.Charge;
+            data.PhaseTimer = ChargeDuration;
+        }
 
         switch (data.CurrentPhase)
         {

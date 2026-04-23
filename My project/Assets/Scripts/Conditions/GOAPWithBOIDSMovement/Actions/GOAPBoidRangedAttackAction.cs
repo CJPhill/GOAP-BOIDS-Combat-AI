@@ -57,6 +57,16 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
             data.PreferredApproachDir = Vector3.forward;
         }
 
+        // Flock-level participation: register with the manager so it includes this
+        // agent when laying out formation slots, and hand it the target so it can
+        // advance through Forming -> Locked -> Firing.
+        if (data.Agent.flockManager != null)
+        {
+            data.Agent.flockManager.RegisterRangedParticipant(data.Agent);
+            if (data.Agent.targetPlayer != null)
+                data.Agent.flockManager.NotifyTargetAcquired(data.Agent.targetPlayer);
+        }
+
         // Only set swarm cooldown when this agent actually got a slot
         if (data.SlotAcquired)
             GOAPBoidAgent.SetFlockCooldown(data.Agent.flockId, data.Agent.SwarmCooldownDuration);
@@ -70,6 +80,26 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
         Vector3 agentPos = data.Agent.Position;
         Vector3 targetPos = data.Target.Position;
         float distance = Vector3.Distance(agentPos, targetPos);
+
+        // Flock-coordinated volley override.
+        // When the manager has entered Forming or Locked, this agent's formation slot
+        // is authoritative — steer to it. When the manager enters Firing, short-circuit
+        // straight to our own Fire phase so every ranged participant volleys together.
+        var mgr = data.Agent.flockManager;
+        if (mgr != null && data.Agent.FlockFormationActive)
+        {
+            var phase = mgr.CurrentRangedPhase;
+            if (phase == GOAPBoidFlockManager.RangedAttackPhase.Forming
+                || phase == GOAPBoidFlockManager.RangedAttackPhase.Locked)
+            {
+                data.Agent.SteerToward(data.Agent.FlockFormationTarget);
+                return ActionRunState.Continue;
+            }
+            if (phase == GOAPBoidFlockManager.RangedAttackPhase.Firing)
+            {
+                data.CurrentPhase = Phase.Fire;
+            }
+        }
 
         switch (data.CurrentPhase)
         {
@@ -132,6 +162,8 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
             GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
             data.SlotAcquired = false;
         }
+        if (data.Agent != null && data.Agent.flockManager != null)
+            data.Agent.flockManager.UnregisterRangedParticipant(data.Agent);
     }
 
     public override void Stop(IMonoAgent agent, Data data)
@@ -141,6 +173,8 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
             GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
             data.SlotAcquired = false;
         }
+        if (data.Agent != null && data.Agent.flockManager != null)
+            data.Agent.flockManager.UnregisterRangedParticipant(data.Agent);
     }
 
     public override void End(IMonoAgent agent, Data data)
@@ -150,6 +184,8 @@ public class GOAPBoidRangedAttackAction : GoapActionBase<GOAPBoidRangedAttackAct
             GOAPBoidAgent.ReleaseAttackSlot(data.Agent.flockId);
             data.SlotAcquired = false;
         }
+        if (data.Agent != null && data.Agent.flockManager != null)
+            data.Agent.flockManager.UnregisterRangedParticipant(data.Agent);
         data.Agent.targetPlayer = null;
     }
 }

@@ -12,7 +12,14 @@ public class PlayerHealth : MonoBehaviour
 
     private float currentHealth;
 
+    public float CurrentHealth => currentHealth;
     public float HealthPercent => maxHealth > 0f ? currentHealth / maxHealth : 0f;
+    /// <summary>
+    /// True when health has dropped to 0 and ResetHealth has not been called since.
+    /// Stays true until the next ResetHealth so ExperimentRunner can detect
+    /// PlayerDeath as a trial-termination condition.
+    /// </summary>
+    public bool IsDead => currentHealth <= 0f;
 
     /// <summary>Set true by AutomatedPlayer during a dodge roll — blocks incoming damage.</summary>
     public bool IsInvincible { get; set; }
@@ -48,7 +55,7 @@ public class PlayerHealth : MonoBehaviour
         Debug.Log("[PlayerHealth] Player died.");
         BehavioralMetricsCollector.Instance?.LogEvent(
             "PlayerDeath", gameObject.name, -1, "Player destroyed");
-        // Reset health so experiments can continue
-        ResetHealth();
+        // Stay dead — ExperimentRunner detects IsDead to terminate the trial,
+        // then calls ResetHealth() before the next trial starts.
     }
 }

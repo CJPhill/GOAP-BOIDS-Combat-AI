@@ -28,10 +28,24 @@ public class PerformanceProfiler : MonoBehaviour
     private float fpsSum;
     private float lastFrameTime;
 
+    // Per-trial run tags (set by ExperimentRunner before the trial starts).
+    private int currentRunId = 0;
+    private int currentSeed = 0;
+
     // Per-frame metrics for export
     private List<FrameMetrics> frameMetricsLog = new List<FrameMetrics>();
 
     private ConditionManager conditionManager;
+
+    /// <summary>
+    /// Tags subsequent frames with the given run/seed so batch-exported CSVs
+    /// are groupable by trial. Call before starting a trial.
+    /// </summary>
+    public void StartTrial(int runId, int seed)
+    {
+        currentRunId = runId;
+        currentSeed = seed;
+    }
 
     private void Start()
     {
@@ -80,15 +94,19 @@ public class PerformanceProfiler : MonoBehaviour
         cpuTimeMs = Time.deltaTime * 1000f;
 
         // Log frame data
+        float cpuMsPerAgent = activeAgentCount > 0 ? cpuTimeMs / activeAgentCount : 0f;
         frameMetricsLog.Add(new FrameMetrics
         {
             frameNumber = Time.frameCount,
             time = Time.time,
             condition = conditionManager != null ? conditionManager.CurrentCondition.ToString() : "Unknown",
+            runId = currentRunId,
+            seed = currentSeed,
             fps = currentFPS,
             averageFPS = averageFPS,
             agentCount = activeAgentCount,
-            cpuTimeMs = cpuTimeMs
+            cpuTimeMs = cpuTimeMs,
+            cpuTimeMsPerAgent = cpuMsPerAgent
         });
 
         if (enableDetailedProfiling)
@@ -125,18 +143,25 @@ public class PerformanceProfiler : MonoBehaviour
 
         Profiler.BeginSample("PerformanceProfiler.ExportMetrics");
 
+        bool fileExists = System.IO.File.Exists(filepath);
         System.Text.StringBuilder csv = new System.Text.StringBuilder();
-        csv.AppendLine("Frame,Time,Condition,FPS,AvgFPS,AgentCount,CPUTimeMs");
+        if (!fileExists)
+            csv.AppendLine("Frame,Time,Condition,RunId,Seed,FPS,AvgFPS,AgentCount,CPUTimeMs,CPUTimeMsPerAgent");
 
         foreach (var frame in frameMetricsLog)
         {
-            csv.AppendLine($"{frame.frameNumber},{frame.time:F3},{frame.condition},{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3}");
+            csv.AppendLine(
+                $"{frame.frameNumber},{frame.time:F3},{frame.condition},{frame.runId},{frame.seed}," +
+                $"{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3},{frame.cpuTimeMsPerAgent:F4}");
         }
 
         try
         {
-            System.IO.File.WriteAllText(filepath, csv.ToString());
-            Debug.Log($"[PerformanceProfiler] Exported {frameMetricsLog.Count} frames to: {filepath}");
+            if (fileExists)
+                System.IO.File.AppendAllText(filepath, csv.ToString());
+            else
+                System.IO.File.WriteAllText(filepath, csv.ToString());
+            Debug.Log($"[PerformanceProfiler] Wrote {frameMetricsLog.Count} frames to: {filepath}");
         }
         catch (System.Exception e)
         {
@@ -179,10 +204,47 @@ public class PerformanceProfiler : MonoBehaviour
         public int frameNumber;
         public float time;
         public string condition;
+        public int runId;
+        public int seed;
         public float fps;
         public float averageFPS;
         public int agentCount;
         public float cpuTimeMs;
+        public float cpuTimeMsPerAgent;
+    }
+
+    public struct TrialAggregates
+    {
+        public float avgFPS;
+        public float avgCpuTimeMs;
+        public float avgCpuTimeMsPerAgent;
+        public int maxAgentCount;
+    }
+
+    /// <summary>
+    /// Aggregates the current buffer of frame metrics into one summary row.
+    /// Called by ExperimentRunner at the end of each trial before ClearMetrics.
+    /// </summary>
+    public TrialAggregates ComputeTrialAggregates()
+    {
+        var agg = new TrialAggregates();
+        if (frameMetricsLog.Count == 0) return agg;
+
+        double sumFps = 0, sumCpu = 0, sumCpuPerAgent = 0;
+        int maxAgents = 0;
+        foreach (var f in frameMetricsLog)
+        {
+            sumFps += f.fps;
+            sumCpu += f.cpuTimeMs;
+            sumCpuPerAgent += f.cpuTimeMsPerAgent;
+            if (f.agentCount > maxAgents) maxAgents = f.agentCount;
+        }
+        int n = frameMetricsLog.Count;
+        agg.avgFPS = (float)(sumFps / n);
+        agg.avgCpuTimeMs = (float)(sumCpu / n);
+        agg.avgCpuTimeMsPerAgent = (float)(sumCpuPerAgent / n);
+        agg.maxAgentCount = maxAgents;
+        return agg;
     }
 
     #if UNITY_EDITOR

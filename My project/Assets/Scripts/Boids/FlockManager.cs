@@ -4,7 +4,21 @@ using UnityEngine;
 
 public class FlockManager : MonoBehaviour
 {
-    public enum FlockState { Idle, Grouping, Engaging }
+    // Extended state machine for thesis parity: conditions 3 & 4 cover Flee/Scatter/
+    // Kite/Flank/Guard/Regroup via GOAP; PureBOIDS now covers them at the flock level
+    // via FlockStateResolver. See FlockStateResolver.Resolve for transition rules.
+    public enum FlockState
+    {
+        Idle,
+        Grouping,
+        Engaging,
+        Fleeing,
+        Scattering,
+        Kiting,
+        Flanking,
+        Guarding,
+        Regrouping
+    }
     public enum RangedAttackPhase { None, Forming, Locked, Firing, Recovering }
     public enum MeleeAttackPhase { None, WindUp, Charging, Recovering }
 
@@ -22,6 +36,15 @@ public class FlockManager : MonoBehaviour
     private int originalFlockSize;
     private float currentFlockHealth;
     private int currentAttackerCount;
+
+    // Scatter auto-expires after settings.scatterDuration; Regroup clears once the
+    // flock tightens back within regroupRadius (see UpdateFlockState).
+    private float scatterTimer;
+
+    // Tuning-parity overrides set by ConditionManager before Start() fires so
+    // conditions 2/3/4 spawn identical flock sizes + HP pools.
+    private int flockSizeOverride = -1;
+    private float maxHealthOverride = -1f;
 
     // Flock ranged attack state
     private RangedAttackPhase rangedPhase = RangedAttackPhase.None;
@@ -49,7 +72,11 @@ public class FlockManager : MonoBehaviour
     public void SetLeader(BoidAgent leader) { leaderBoid = leader; }
 
     public bool IsDead => currentFlockHealth <= 0f;
-    public float HealthPercent => settings != null ? currentFlockHealth / settings.maxHealth : 0f;
+    /// <summary>Max HP, honoring the ConditionManager override when set.</summary>
+    public float EffectiveMaxHealth => maxHealthOverride > 0f
+        ? maxHealthOverride
+        : (settings != null ? settings.maxHealth : 0f);
+    public float HealthPercent => EffectiveMaxHealth > 0f ? currentFlockHealth / EffectiveMaxHealth : 0f;
 
     public void TakeDamage(float amount)
     {
@@ -67,7 +94,8 @@ public class FlockManager : MonoBehaviour
 
         // Scale live boid count from minSurvivorFraction..1 as health goes 0..1
         // Keeps the last minSurvivorFraction alive until health reaches 0
-        float hp = currentFlockHealth / settings.maxHealth;
+        float maxHP = EffectiveMaxHealth;
+        float hp = maxHP > 0f ? currentFlockHealth / maxHP : 0f;
         int targetCount = Mathf.RoundToInt(
             Mathf.Lerp(settings.minSurvivorFraction, 1f, hp) * originalFlockSize);
 
@@ -149,11 +177,69 @@ public class FlockManager : MonoBehaviour
         currentAttackerCount = Mathf.Max(currentAttackerCount - 1, 0);
     }
 
+    /// <summary>
+    /// Called by ConditionManager BEFORE Start() fires (via AddComponent ordering)
+    /// so the manager can spawn the requested flock size and HP pool for thesis
+    /// parity. -1 on either field means "use settings value."
+    /// </summary>
+    public void ApplyComparisonOverrides(int flockSize, float maxHealth)
+    {
+        if (flockSize > 0) flockSizeOverride = flockSize;
+        if (maxHealth > 0f) maxHealthOverride = maxHealth;
+    }
+
+    /// <summary>
+    /// True when the state permits attack machines (melee wave + ranged volley)
+    /// to advance. Only Engaging/Flanking permit both; Kiting permits ranged only
+    /// (the caller checks flockType). All other states suppress attacks entirely.
+    /// </summary>
+    public bool AttackMachineAllowed
+    {
+        get
+        {
+            switch (state)
+            {
+                case FlockState.Engaging:
+                case FlockState.Flanking:
+                case FlockState.Kiting:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Max distance any boid sits from the flock centroid. Feeds the Regrouping
+    /// transition (fires when this exceeds settings.isolationThreshold).
+    /// </summary>
+    public float GetMaxBoidDistanceFromCentroid()
+    {
+        if (boids.Count == 0) return 0f;
+        Vector3 center = GetFlockCenter();
+        float max = 0f;
+        for (int i = 0; i < boids.Count; i++)
+        {
+            float d = Vector3.Distance(boids[i].Position, center);
+            if (d > max) max = d;
+        }
+        return max;
+    }
+
     public void SetTarget(Transform t)
     {
+        bool wasNull = target == null;
         target = t;
         if (t != null)
+        {
             state = FlockState.Grouping;
+            // First target-acquisition of this trial is the stimulus event the
+            // reaction-time metric measures against. Fires once per flock per trial.
+            if (wasNull)
+                BehavioralMetricsCollector.Instance?.LogEvent(
+                    "StimulusAcquired", gameObject.name,
+                    (int)settings.flockType, $"Target={t.name}");
+        }
     }
 
     public void ClearTarget()
@@ -193,39 +279,26 @@ public class FlockManager : MonoBehaviour
         {
             SpawnFlock();
             originalFlockSize = boids.Count;
-            currentFlockHealth = settings.maxHealth;
+            // Honour HP override before falling back to settings.maxHealth.
+            currentFlockHealth = maxHealthOverride > 0f ? maxHealthOverride : settings.maxHealth;
         }
     }
 
     private void Update()
     {
-        if (target == null || settings == null)
-            return;
+        if (settings == null) return;
 
-        if (state == FlockState.Grouping)
-        {
-            // Check if enough boids are clustered to transition to Engaging
-            float effectiveRadius = EffectiveBoundaryRadius;
-            float radiusSqr = effectiveRadius * effectiveRadius;
-            int clusteredCount = 0;
-
-            for (int i = 0; i < boids.Count; i++)
-            {
-                Vector3 offset = boids[i].Position - transform.position;
-                if (offset.sqrMagnitude <= radiusSqr)
-                    clusteredCount++;
-            }
-
-            float fraction = boids.Count > 0 ? (float)clusteredCount / boids.Count : 1f;
-            if (fraction >= settings.groupUpThreshold)
-                state = FlockState.Engaging;
-
-            return; // Don't advance while grouping
-        }
-
-        // Flock-level attacks — disabled when active condition uses GOAP (leader GOAP actions handle combat instead).
+        // Leader-driven conditions (BOIDSWithGOAPLeader) suppress flock-level
+        // decision making — the leader's GOAP owns everything.
         bool useGoap = ConditionManager.Instance != null && ConditionManager.Instance.UsesGoapForBoids;
+
         if (!useGoap)
+            UpdateFlockState();
+
+        if (target == null) return;
+
+        // Attack machines gated by state — Fleeing/Scattering/Guarding/Regrouping/Grouping/Idle suppress.
+        if (!useGoap && AttackMachineAllowed)
         {
             if (settings.flockType == FlockType.Ranged)
                 UpdateRangedFlockAttack();
@@ -233,22 +306,141 @@ public class FlockManager : MonoBehaviour
                 UpdateMeleeFlockAttack();
         }
 
-        // Engaging — move toward target (existing arrival behavior)
-        Vector3 direction = target.position - transform.position;
-        float distance = direction.magnitude;
+        // Anchor movement — chase target for Engaging/Flanking/Guarding/Grouping,
+        // retreat for Fleeing/Kiting/Scattering, hold for Regrouping/Idle.
+        MoveAnchor();
+    }
 
-        if (distance < settings.targetStopDistance)
-            return;
+    private void MoveAnchor()
+    {
+        if (target == null) return;
 
-        float speed = settings.targetFollowSpeed;
-
-        if (distance < settings.targetSlowDistance)
+        switch (state)
         {
-            float t = (distance - settings.targetStopDistance) / (settings.targetSlowDistance - settings.targetStopDistance);
-            speed *= Mathf.Clamp01(t);
+            case FlockState.Engaging:
+            case FlockState.Flanking:
+            case FlockState.Grouping:
+            {
+                Vector3 direction = target.position - transform.position;
+                float distance = direction.magnitude;
+                if (distance < settings.targetStopDistance) return;
+                float speed = settings.targetFollowSpeed;
+                if (distance < settings.targetSlowDistance)
+                {
+                    float t = (distance - settings.targetStopDistance) / (settings.targetSlowDistance - settings.targetStopDistance);
+                    speed *= Mathf.Clamp01(t);
+                }
+                transform.position = Vector3.MoveTowards(transform.position, target.position, speed * Time.deltaTime);
+                break;
+            }
+
+            case FlockState.Guarding:
+            {
+                // Hold position at guardInnerRange — close the gap if beyond, back off if closer.
+                float dist = Vector3.Distance(transform.position, target.position);
+                Vector3 toTarget = (target.position - transform.position).normalized;
+                float step = settings.targetFollowSpeed * 0.5f * Time.deltaTime;
+                if (dist > settings.guardInnerRange + 1f)
+                    transform.position += toTarget * step;
+                else if (dist < settings.guardInnerRange - 1f)
+                    transform.position -= toTarget * step;
+                break;
+            }
+
+            case FlockState.Fleeing:
+            case FlockState.Kiting:
+            case FlockState.Scattering:
+            {
+                Vector3 awayDir = (transform.position - target.position).normalized;
+                float speed = settings.targetFollowSpeed * settings.fleeSpeedMultiplier;
+                transform.position += awayDir * speed * Time.deltaTime;
+                break;
+            }
+
+            // Idle / Regrouping: hold anchor, let cohesion tighten the flock.
+        }
+    }
+
+    /// <summary>
+    /// Flock-level state transition. Mirrors GoalPriorityResolver priority via
+    /// FlockStateResolver so PureBOIDS expresses the same behavior set that the
+    /// GOAP conditions express through planning.
+    /// </summary>
+    private void UpdateFlockState()
+    {
+        // Scattering auto-expires so the flock can recover to Fleeing/Engaging/etc.
+        if (state == FlockState.Scattering)
+        {
+            scatterTimer -= Time.deltaTime;
+            if (scatterTimer > 0f) return; // stay scattering
         }
 
-        transform.position = Vector3.MoveTowards(transform.position, target.position, speed * Time.deltaTime);
+        float playerDist = target != null
+            ? Vector3.Distance(target.position, transform.position)
+            : float.MaxValue;
+        bool hasTarget = target != null;
+        bool playerNearby = hasTarget && playerDist <= settings.aggroRadius;
+
+        // Clustered-enough check (existing Grouping → Engaging transition criterion).
+        float effectiveRadius = EffectiveBoundaryRadius;
+        float radiusSqr = effectiveRadius * effectiveRadius;
+        int clusteredCount = 0;
+        for (int i = 0; i < boids.Count; i++)
+        {
+            Vector3 offset = boids[i].Position - transform.position;
+            if (offset.sqrMagnitude <= radiusSqr) clusteredCount++;
+        }
+        float clusterFraction = boids.Count > 0 ? (float)clusteredCount / boids.Count : 1f;
+        bool clusteredEnough = clusterFraction >= settings.groupUpThreshold;
+
+        float maxDistFromCentroid = GetMaxBoidDistanceFromCentroid();
+        bool rangedActive = rangedPhase != RangedAttackPhase.None && rangedPhase != RangedAttackPhase.Recovering;
+        bool meleeActive = meleePhase != MeleeAttackPhase.None && meleePhase != MeleeAttackPhase.Recovering;
+        bool slotsSaturated = currentAttackerCount >= settings.maxSimultaneousAttackers;
+
+        var behavior = FlockStateResolver.Resolve(
+            healthPercent: HealthPercent,
+            hasTarget: hasTarget,
+            playerNearby: playerNearby,
+            playerDist: playerDist,
+            isRanged: settings.flockType == FlockType.Ranged,
+            attackSlotsSaturated: slotsSaturated,
+            meleeAttackActive: meleeActive,
+            rangedAttackActive: rangedActive,
+            maxDistanceFromCentroid: maxDistFromCentroid,
+            boidCount: boids.Count,
+            clusteredEnoughToEngage: clusteredEnough,
+            criticalHealthThreshold: settings.criticalHealthThreshold,
+            fleeHealthThreshold: settings.fleeHealthThreshold,
+            kiteMinDistance: settings.kiteMinDistance,
+            isolationThreshold: settings.isolationThreshold,
+            guardInnerRange: settings.guardInnerRange,
+            guardOuterRange: settings.guardOuterRange);
+
+        // FlockBehavior and FlockState are declared in the same order so a cast is safe.
+        FlockState newState = (FlockState)(int)behavior;
+
+        // Scattering entry: arm the timer and cancel in-flight attacks.
+        if (newState == FlockState.Scattering && state != FlockState.Scattering)
+        {
+            scatterTimer = settings.scatterDuration;
+            ResetMeleeAttack();
+            if (rangedPhase != RangedAttackPhase.None)
+            {
+                ReleaseBoidFormations();
+                rangedPhase = RangedAttackPhase.None;
+            }
+        }
+
+        // Log state transitions as GoalChange events so PureBOIDS shows up in the
+        // same reaction-time + event-log pipeline as GOAP conditions.
+        if (newState != state)
+        {
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "GoalChange", gameObject.name, (int)settings.flockType, $"{state}→{newState}");
+        }
+
+        state = newState;
     }
 
     private void OnTriggerEnter(Collider other)
@@ -262,7 +454,8 @@ public class FlockManager : MonoBehaviour
         // Cache the GOAP behaviour lookup once, outside the per-boid loop.
         var goapBehaviour = FindFirstObjectByType<GoapBehaviour>();
 
-        for (int i = 0; i < settings.flockSize; i++)
+        int flockSize = flockSizeOverride > 0 ? flockSizeOverride : settings.flockSize;
+        for (int i = 0; i < flockSize; i++)
         {
             Vector3 spawnPos = transform.position + Random.insideUnitSphere * settings.spawnRadius;
             Vector3 startVelocity = Random.onUnitSphere * settings.maxSpeed * 0.5f;

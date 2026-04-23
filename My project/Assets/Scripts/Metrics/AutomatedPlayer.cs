@@ -50,7 +50,7 @@ public class AutomatedPlayer : MonoBehaviour
 
     [Header("Light Attack")]
     [SerializeField] private float lightAttackRange    = 7f;
-    [SerializeField] private float lightAttackDamage   = 15f;
+    [SerializeField] private float lightAttackDamage   = 7f;
     [SerializeField] private float lightAttackCooldown = 0.55f;
     [SerializeField] private float lightAttackConeHalfAngle = 65f;
 
@@ -58,18 +58,18 @@ public class AutomatedPlayer : MonoBehaviour
     [SerializeField] private int   maxComboCount       = 3;
     [SerializeField] private float comboWindowDuration = 1.3f;
     [SerializeField] private float heavyAttackRange    = 6f;
-    [SerializeField] private float heavyAttackDamage   = 45f;
+    [SerializeField] private float heavyAttackDamage   = 22f;
     [SerializeField] private float heavyAttackCooldown = 2.5f;
     [SerializeField] private float heavyWindUpDuration = 0.5f;
 
     [Header("AOE Burst (spin attack)")]
-    [SerializeField] private float aoeBurstRange    = 8f;
-    [SerializeField] private float aoeBurstDamage   = 22f;
+    [SerializeField] private float aoeBurstRange    = 5f;
+    [SerializeField] private float aoeBurstDamage   = 11f;
     [SerializeField] private float aoeBurstCooldown = 7f;
 
     [Header("Ranged Throw")]
     [SerializeField] private float rangedThrowRange    = 28f;
-    [SerializeField] private float rangedThrowDamage   = 20f;
+    [SerializeField] private float rangedThrowDamage   = 10f;
     [SerializeField] private float rangedThrowCooldown = 2.8f;
 
     [Header("Dodge Roll")]

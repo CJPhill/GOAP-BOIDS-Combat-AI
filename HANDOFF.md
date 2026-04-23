@@ -1,95 +1,180 @@
 # AI Game Demo — Workstation Handoff
-**Last updated:** 2026-04-22 | **Branch:** main | **Commit:** e952070
+**Last updated:** 2026-04-23 | **Branch:** main
 
 ---
 
 ## Project
-Unity 6000.3.8f1 thesis project comparing 4 AI agent architectures in a shared combat scene.
+Unity 6000.3.8f1 thesis project comparing **three swarming architectures** against a consistent adversary (AutomatedPlayer) in a shared combat scene.
 CrashKonijn GOAP v3.1.2 + custom BOIDS implementation.
 
-### 4 Conditions
-| # | Name | Description |
-|---|------|-------------|
-| 1 | PureGOAP | GOAP-only agents (PureGOAPAgent, PureGOAPBrain) |
-| 2 | PureBOIDS | BOIDS flocking only (BoidAgent, FlockManager) |
-| 3 | BOIDSWithGOAPLeader | One GOAP leader per flock, followers are BOIDS |
-| 4 | GOAPWithBOIDSMovement | Every agent has GOAP brain + BOIDS movement forces |
+### Conditions under comparison
+| # | Name | Decision mechanism |
+|---|------|-------------------|
+| 1 | PureGOAP | **Kept in code, excluded from benchmarks.** GOAP-only agents (no swarm). |
+| 2 | PureBOIDS | Flock-level state machine + pure emergent swarm — no planning. |
+| 3 | BOIDSWithGOAPLeader | GOAP leader per flock, followers are plain BOIDS (cohese to leader). |
+| 4 | GOAPWithBOIDSMovement | GOAP brain per agent + BOIDS steering forces layered on. |
+
+All three active conditions express the **same 9 behaviors** (Wander, Attack, RangedAttack, Flee, Scatter, Kite, Flank, Guard, Regroup) through different mechanisms. Tuning parity: same agent count, same pooled HP, same player damage across conditions so architecture is the only variable.
 
 ---
 
 ## Key Files
+
 ```
 My project/Assets/Scripts/
   Conditions/
-    ConditionManager.cs            ← spawns all 4 conditions; fixed seed (default 42)
-    BOIDSWithGOAPLeader/
-      LeaderGoapBrain.cs           ← leader GOAP brain + leash fix (maxLeaderSeparation=12)
-    GOAPWithBOIDSMovement/
-      GOAPBoidAgent.cs             ← IEnemy impl, attack slots, AllAgents static list
-      GOAPBoidBrain.cs             ← goal selection
-      Actions/
-        GOAPBoidAttackAction.cs    ← melee; arc approach fix (PreferredApproachDir)
-        GOAPBoidRangedAttackAction.cs ← ranged; same arc fix, orbits from unique angle
-        GOAPBoidKiteAction.cs
+    ConditionManager.cs               ← spawns all conditions; SetSeed/SetAgentCount for batch runs; comparison HP override
+    AttackType.cs                     ← enum { Melee, Ranged }
     Shared/
-      GoalPriorityResolver.cs
+      GoalPriorityResolver.cs         ← priority tree for goal selection (shared across conditions 3 & 4)
+      FlockStateResolver.cs           ← ✨ pure-function resolver for PureBOIDS flock states (mirrors priority tree)
+
+    PureGOAP/                         ← condition 1 (dropped from benchmarks, kept for reference)
+
+    BOIDSWithGOAPLeader/              ← condition 3
+      LeaderGoapBrain.cs              ← leader goal selection; ✨ now logs per-flock (fixed flockId bug)
+      Actions/ Goals/ Capabilities/
+
+    GOAPWithBOIDSMovement/            ← condition 4
+      GOAPBoidAgent.cs                ← IEnemy impl; flockManager back-ref; centroid leash; pooled HP proxy
+      GOAPBoidBrain.cs                ← goal selection; logs GoalChange events
+      GOAPBoidFlockManager.cs         ← ✨ flock-level glue: pooled HP, centroid cache, attack phases, formation ring
+      Actions/                        ← Wander/Flee/Attack/Ranged/Kite/Flank/Guard/Regroup/Scatter
+      Sensors/ Capabilities/
+
+  Boids/
+    BoidAgent.cs                      ← ✨ state-based steering (flee/scatter/kite/flank/guard/regroup branches)
+    BoidSettings.cs                   ← ScriptableObject; ✨ new parity fields (flee thresholds, scatter dur, etc.)
+    FlockManager.cs                   ← ✨ 9-state machine; UpdateFlockState; ApplyComparisonOverrides; StimulusAcquired event
+    FlockCoordinator.cs
+    BoidProjectile.cs
+
   Metrics/
-    AutomatedPlayer.cs             ← hack-and-slash bot (7 phases, 5 abilities, seeded)
-  PlayerHealth.cs                  ← IsInvincible flag for dodge i-frames
+    ExperimentRunner.cs               ← ✨ batch mode: multi-run × multi-size × multi-condition; termination conditions
+    BehavioralMetricsCollector.cs     ← ✨ reaction time + Shannon entropy; run/seed/size tagging; TrialSummary append
+    PerformanceProfiler.cs            ← ✨ per-agent CPU column; trial aggregates; run/seed tagging
+    AutomatedPlayer.cs                ← hack-and-slash bot (7 phases, 5 abilities, seeded)
+
+  PlayerHealth.cs                     ← ✨ IsDead persists for trial termination
+  VisualTests/
+    GoalLabelOverlay.cs               ← on-screen goal label above each GOAPBoidAgent
+
+My project/Assets/Editor/
+  ExperimentBatchCli.cs               ← ✨ "Thesis → Run Batch Experiment" menu + CLI -executeMethod hook
 
 My project/Assets/Tests/
   EditMode/
-    ArcApproachDirectionTests.cs   ← 7 tests: arc direction math
-    LeaderLeashTests.cs            ← 8 tests: leash velocity scalar
-    ReproducibilityTests.cs        ← 5 tests: seed reproducibility
-    AutomatedPlayerLogicTests.cs   ← 9 tests: phases, cone, i-frames, orbit
+    GoalPriorityLogicTests.cs
+    FlockStateTransitionTests.cs      ← ✨ 14 tests of FlockStateResolver priority tree
+    ShannonEntropyTests.cs            ← ✨ 8 tests of entropy math
+    ArcApproachDirectionTests.cs
+    LeaderLeashTests.cs
+    ReproducibilityTests.cs
+    AutomatedPlayerLogicTests.cs
+    FlankingSlotCalculatorTests.cs
+    ScatterDirectionPickerTests.cs
   PlayMode/
-    ArcApproachPlayModeTests.cs    ← 6 tests: unique dirs, spread targets, attack slots
-    AutomatedPlayerPlayModeTests.cs← 9 tests: i-frames, wander start, combat, flags
+    GOAPVisualPlayTests.cs            ← ✨ 9 goal scenarios for GOAPBoid; observe-any-frame assertion
+    PureBoidsVisualPlayTests.cs       ← ✨ 6 state scenarios for PureBOIDS flock machine
+    BatchRunnerSmokeTest.cs           ← ✨ end-to-end batch smoke test
+    ArcApproachPlayModeTests.cs
+    AutomatedPlayerPlayModeTests.cs
+    GOAPBoidAgentTests.cs
+    FlockSeparationTests.cs
+    SpawningTests.cs
+    PlayModeTests.asmdef              ← ✨ now references CrashKonijn.* assemblies
 ```
 
 ---
 
 ## What Was Done This Session
-1. **Arc attack approach** — GOAPWithBOIDSMovement agents no longer pile up on player center.
-   Each agent computes `PreferredApproachDir = normalize(agentPos - playerPos, XZ)` at action
-   start and steers to `playerPos + dir * contactDistance` instead.
 
-2. **Leader leash** — BOIDSWithGOAPLeader leader velocity scaled down proportionally when it
-   drifts more than `maxLeaderSeparation` (12u) from flock centroid. Applied in `LeaderGoapBrain.Update()`.
+### 1. Condition 4 flock-manager parity (GOAPBoidFlockManager)
+PureBOIDS-flavoured glue for `GOAPWithBOIDSMovement`, additive to the per-agent GOAP brains:
+- **Pooled HP** (mirrors `FlockManager.SyncBoidCountToHealth`)
+- **Centroid cache** (updated in LateUpdate)
+- **Centroid leash** force read by `GOAPBoidAgent.ComputeBoidsForces`
+- **Ranged phases** Forming → Locked → Firing → Recovering with formation-ring slots (agents fire from their slot — preserves GOAP's per-agent fire step)
+- **Melee wave** WindUp → Charging → Recovering (melee action snaps to Charge when the wave hits)
 
-3. **Fixed random seed** — `ConditionManager.SpawnAgentsForCondition()` calls
-   `Random.InitState(42)` before spawning. Toggle `useFixedSeed` in Inspector.
+### 2. PureBOIDS behavioral parity
+`FlockManager.FlockState` expanded from 3 states to 9. New states fire via `FlockStateResolver` (pure function mirroring `GoalPriorityResolver` priority tree). Gated on `!UsesGoapForBoids` so condition 3 is unaffected. `BoidAgent.UpdateBoid` branches per state: Fleeing/Kiting reverse target seek; Scattering disables cohesion and injects outward force; Flanking rotates target direction by ±60°; Guarding holds at `guardInnerRange`; Regrouping boosts cohesion. Flee/Kite bump max speed by `fleeSpeedMultiplier`; Scatter by `scatterSpeedMultiplier`.
 
-4. **AutomatedPlayer rewrite** — Full hack-and-slash bot:
-   - 7 weighted phases: Wander(10%), Approach(25%), CircleStrafe(25%), HitAndRun(20%),
-     StandAndFight(12%), Kite(8%), Retreat (auto at <35% HP)
-   - 5 abilities: LightAttack (cone, 0.55s CD), HeavyAttack (AOE wind-up 1.2s, 4s CD),
-     AOEBurst (360°, 12s CD), RangedThrow (8s CD), DodgeRoll (i-frames, 3s CD)
-   - FindObjectsByType cached every 0.5s (not per-frame)
-   - All Random calls only at phase transitions, not per-frame
+### 3. Tuning parity across conditions 2/3/4
+`ConditionManager.comparisonHPPerFlock` (default 3000) is applied via `FlockManager.ApplyComparisonOverrides(flockSize, maxHealth)` at spawn. All three conditions now spawn the same headcount (split by `rangedAgentRatio`) and share the same HP pool.
 
-5. **6 new test files** (EditMode + PlayMode) added and passing.
+### 4. Experiment pipeline overhaul
+- **End-of-trial outcomes**: `PlayerDeath` / `FlockWiped` / `TimeLimit`. `PlayerHealth.IsDead` persists (removed auto-reset on death). `ConditionManager.AllFlocksDead` unified check across both flock-manager types.
+- **Reaction-time metric**: first-stimulus → first-active-response per flock, ms. Stimulus fires on `FlockManager.SetTarget` / `GOAPBoidFlockManager.NotifyTargetAcquired` (first null→non-null). `ExperimentRunner.ForceStimulusOnAllFlocks()` guarantees a deterministic stimulus timestamp inside the recording window. Ordering bug fixed — response only counts after stimulus for that flock.
+- **Goal entropy (Shannon)**: over 9-bucket distribution, computed at `StopRecording`. Inner math is a pure static `BehavioralMetricsCollector.ShannonEntropy(long[])` for unit-testability.
+- **Per-agent CPU**: `cpuTimeMsPerAgent = cpuTimeMs / agentCount` column added to performance CSV + trial aggregates.
+- **Multi-run batch**: `ExperimentRunner` loops runs × conditions × **agent-count sweep** and appends to unified batch CSVs with `RunId / Seed / AgentCount` columns. Per-(size, condition) μ±σ text summary printed at end.
+- **Deterministic unique seeds**: `seed = baseSeed + sizeIdx * runsPerCondition + run`. EventLog / GoalDistribution CSVs stay joinable by seed alone.
+
+### 5. Leader reaction-time bug fixed
+`LeaderGoapBrain.LogEvent` was hardcoding `flockId = 0` for every leader → ranged-leader events were attributed to melee → `ReactionRangedMs` always `-1`. Now reads `boid.settings.flockType`.
+
+### 6. Visual test harness
+- `GOAPVisualPlayTests` — 9 PlayMode tests, one per GOAP goal, each runs 5s at real time and observes goals every frame.
+- `PureBoidsVisualPlayTests` — 6 tests, one per new PureBOIDS flock state.
+- `BatchRunnerSmokeTest` — end-to-end validation of the batch pipeline.
+- `GoalLabelOverlay.cs` — floating goal label above each `GOAPBoidAgent`, usable in any scene.
+- **Editor menu**: `Thesis → Run Batch Experiment` / `Thesis → Stop Batch`.
+- **CLI hook**: `ExperimentBatchCli.RunBatchFromCommandLine` callable via `Unity.exe -executeMethod`.
 
 ---
 
-## Still TODO (not coded yet)
-- **Agent size match** — Unity Editor only: open `goapWithBOIDSMovementPrefab`, match
-  `Transform.localScale` to `pureGOAPAgentPrefab`.
-- **Separation radius** — Raise `separationRadius` 4 → 7 on GOAPBoidMovement prefab in Inspector.
-- **Scene wiring check** — Verify `New Scene.unity` has all 4 conditions wired to ConditionManager
-  (prefab slots, GoapBehaviour components, Player tag on player GO).
-- **PureGOAP goal parity** — PureGOAPBrain only has 3 goals (Flee/Attack/Wander) vs 8 in
-  conditions 3 & 4. Decide if intentional or needs expanding before thesis data collection.
+## Current batch defaults
+
+`ExperimentRunner` (Inspector):
+- `Experiment Duration`: 60s max per trial
+- `Runs Per Condition`: 10
+- `Base Seed`: 42
+- `Transition Delay`: 2s
+- `Conditions To Test`: `[PureBOIDS, BOIDSWithGOAPLeader, GOAPWithBOIDSMovement]`
+- `Agent Counts To Test`: `[100]` (set to e.g. `[50, 100, 200]` for scaling sweep)
+- `Comparison HP Per Flock`: 3000
+
+`AutomatedPlayer` ability damage (halved from original for longer observation):
+- Light 7 · Heavy 22 · AOE Burst 11 (range 5u) · Ranged Throw 10
 
 ---
 
-## Running Tests
-Open Unity → Window → General → Test Runner
-- EditMode tab: run `ArcApproachDirectionTests`, `LeaderLeashTests`, `ReproducibilityTests`, `AutomatedPlayerLogicTests`
-- PlayMode tab: run `ArcApproachPlayModeTests`, `AutomatedPlayerPlayModeTests`
+## Still TODO
+- **Analysis notebook** (Python/Jupyter) reading the 4 batch CSVs → mean-metric bar chart, entropy box plot, reaction-time histogram, scaling curves. ~50 lines of pandas+matplotlib.
+- **Scaling sweep at larger counts** (`[100, 200, 400, 800]`) to find where FPS diverges between architectures — currently no differentiation at ~100.
+- **Per-system CPU breakdown** via existing `Profiler.BeginSample` markers (BOIDS forces vs GOAP planning vs physics). Infrastructure exists; aggregation script needed.
+- **Auto-screenshot at key events** (first scatter, first regroup) for thesis figures.
 
-## Reproducing a Run
-1. In Inspector on ConditionManager: `useFixedSeed = true`, `randomSeed = 42`
-2. Press Play → ExperimentRunner cycles through all 4 conditions automatically
-3. CSV output written by BehavioralMetricsCollector
+---
+
+## Running the pipeline
+
+### Batch experiments
+1. Open the scene `Assets/Scenes/New Scene.unity`.
+2. Top menu: **Thesis → Run Batch Experiment** (or right-click ExperimentRunner → Run All Experiments).
+3. Wait for "Batch complete" in Console. CSVs on Desktop:
+   - `TrialSummary_batch_{ts}.csv` ← thesis-facing
+   - `Performance_batch_{ts}.csv`
+   - `GoalDistribution_batch_{ts}.csv`
+   - `EventLog_batch_{ts}.csv`
+
+### Tests
+Open **Window → General → Test Runner**.
+- **EditMode** tab: all tests runnable headless; ~1s total.
+- **PlayMode** tab: each test runs 5s real-time; requires `Assets/Scenes/New Scene.unity` in Build Settings.
+
+### CLI headless batch (when Unity Editor is closed)
+```powershell
+& "C:\Program Files\Unity\Hub\Editor\6000.3.8f1\Editor\Unity.exe" `
+   -projectPath "C:\Users\cliff\Desktop\Thesis\AI_Game_demo\My project" `
+   -executeMethod ExperimentBatchCli.RunBatchFromCommandLine `
+   -logFile "$env:USERPROFILE\Desktop\unity-batch.log"
+```
+
+---
+
+## User Preferences
+- **Never edit TagManager.asset, project layers, or tags directly.** Instruct user to do it in Unity UI.
+- For anything easily configurable in Inspector or Project Settings UI, instruct user to make the change manually.

@@ -4,7 +4,12 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "GameScripts"
+        "GameScripts",
+        "CrashKonijn.Agent.Core",
+        "CrashKonijn.Agent.Runtime",
+        "CrashKonijn.Goap.Core",
+        "CrashKonijn.Goap.Resolver",
+        "CrashKonijn.Goap.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

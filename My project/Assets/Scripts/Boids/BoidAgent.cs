@@ -58,12 +58,23 @@ public class BoidAgent : MonoBehaviour, IEnemy
         // Suppress flocking and seek forces only during full movement override (ranged formation)
         if (!IsMovementOverridden)
         {
-            // Apply the three core flocking rules
+            // State-based modulation of the three core flocking rules.
+            // Scattering: kill alignment+cohesion so boids disperse chaotically.
+            // Regrouping: boost cohesion so the flock rapidly re-tightens.
+            FlockManager.FlockState s = manager.State;
+            bool skipAlignmentCohesion = s == FlockManager.FlockState.Scattering;
+            float cohesionMul = s == FlockManager.FlockState.Regrouping
+                ? settings.regroupCohesionMultiplier
+                : 1f;
+
             if (neighborCount > 0)
             {
                 acceleration += SteerTowards(separationHeading) * settings.separationWeight;
-                acceleration += SteerTowards(alignmentHeading) * settings.alignmentWeight;
-                acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight;
+                if (!skipAlignmentCohesion)
+                {
+                    acceleration += SteerTowards(alignmentHeading) * settings.alignmentWeight;
+                    acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight * cohesionMul;
+                }
             }
 
             // Cross-flock avoidance (independent of same-flock neighbors)
@@ -72,16 +83,63 @@ public class BoidAgent : MonoBehaviour, IEnemy
             // Boundary steering
             acceleration += ComputeBoundarySteer();
 
-            // Target-seek steering (per-boid, only when Engaging)
-            if (manager.Target != null && manager.State == FlockManager.FlockState.Engaging && settings.targetSeekWeight > 0f)
+            // Scattering: each boid gets a random outward push from the flock centroid.
+            if (s == FlockManager.FlockState.Scattering)
+            {
+                Vector3 outward = cachedTransform.position - manager.GetFlockCenter();
+                if (outward.sqrMagnitude > 0.001f)
+                    acceleration += outward.normalized * settings.maxSteerForce;
+            }
+
+            // Target-seek — per-state behavior.
+            if (manager.Target != null && settings.targetSeekWeight > 0f)
             {
                 Vector3 targetOffset = manager.Target.position - cachedTransform.position;
                 float targetDist = targetOffset.magnitude;
 
-                if (targetDist > settings.targetKeepDistance)
-                    acceleration += SteerTowards(targetOffset) * settings.targetSeekWeight;
-                else
-                    acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight;
+                switch (s)
+                {
+                    case FlockManager.FlockState.Engaging:
+                        if (targetDist > settings.targetKeepDistance)
+                            acceleration += SteerTowards(targetOffset) * settings.targetSeekWeight;
+                        else
+                            acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight;
+                        break;
+
+                    case FlockManager.FlockState.Fleeing:
+                    case FlockManager.FlockState.Kiting:
+                    case FlockManager.FlockState.Scattering:
+                        // Steer AWAY from the target. Kiting still lets the flock's
+                        // ranged machine fire volleys from the backpedaling position.
+                        acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight;
+                        break;
+
+                    case FlockManager.FlockState.Guarding:
+                        // Hold the perimeter at guardInnerRange — step in if beyond, back off if inside.
+                        if (targetDist > settings.guardInnerRange + 1f)
+                            acceleration += SteerTowards(targetOffset) * settings.targetSeekWeight * 0.5f;
+                        else if (targetDist < settings.guardInnerRange - 1f)
+                            acceleration += SteerTowards(-targetOffset) * settings.targetSeekWeight * 0.5f;
+                        break;
+
+                    case FlockManager.FlockState.Flanking:
+                    {
+                        // Rotate target-seek by ±flankAngleDegrees around Y — side of
+                        // the angle picked from this boid's current side of the target
+                        // so the flock splits into two wings instead of one lane.
+                        float sign = cachedTransform.position.x >= manager.Target.position.x ? 1f : -1f;
+                        Quaternion rot = Quaternion.AngleAxis(sign * settings.flankAngleDegrees, Vector3.up);
+                        Vector3 flankedDir = rot * targetOffset;
+                        if (targetDist > settings.targetKeepDistance)
+                            acceleration += SteerTowards(flankedDir) * settings.targetSeekWeight;
+                        else
+                            acceleration += SteerTowards(-flankedDir) * settings.targetSeekWeight;
+                        break;
+                    }
+
+                    // Idle / Grouping / Regrouping: no per-boid target-seek — manager
+                    // anchor movement handles overall positioning; cohesion keeps the flock tight.
+                }
             }
         }
 
@@ -110,7 +168,19 @@ public class BoidAgent : MonoBehaviour, IEnemy
             float speed = velocity.magnitude;
             if (speed > 0f)
             {
+                // Fleeing / Kiting get a modest speed boost, Scattering a larger one
+                // so the flock visibly panics vs merely retreating.
                 float maxSpd = settings.maxSpeed;
+                switch (manager.State)
+                {
+                    case FlockManager.FlockState.Fleeing:
+                    case FlockManager.FlockState.Kiting:
+                        maxSpd *= settings.fleeSpeedMultiplier;
+                        break;
+                    case FlockManager.FlockState.Scattering:
+                        maxSpd *= settings.scatterSpeedMultiplier;
+                        break;
+                }
                 speed = Mathf.Clamp(speed, settings.minSpeed, maxSpd);
                 velocity = velocity.normalized * speed;
             }
