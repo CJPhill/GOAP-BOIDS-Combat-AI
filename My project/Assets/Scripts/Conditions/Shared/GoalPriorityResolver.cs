@@ -33,12 +33,17 @@ public static class GoalPriorityResolver
         float criticalHealthThreshold = 0.15f,
         float kiteMinDistance = 8f,
         float guardInnerRange = 15f,
-        float guardOuterRange = 30f)
+        float guardOuterRange = 30f,
+        // fleeHealthThreshold is now explicit so GOAP conditions read the same
+        // BoidSettings value as PureBOIDS's FlockStateResolver. Previously
+        // hardcoded to 0.3 here, making Inspector tuning of fleeHealthThreshold
+        // only affect PureBOIDS — a silent thesis-comparison parity bug.
+        float fleeHealthThreshold = 0.3f)
     {
         if (playerNearby && healthPercent < criticalHealthThreshold)
             return GoalType.Scatter;
 
-        if (playerNearby && healthPercent < 0.3f)
+        if (playerNearby && healthPercent < fleeHealthThreshold)
             return GoalType.Flee;
 
         if (playerNearby && cooldownReady && attackSlotAvailable)
@@ -78,13 +83,15 @@ public static class GoalPriorityResolver
         float criticalHealthThreshold = 0.15f,
         float kiteMinDistance = 8f,
         float guardInnerRange = 15f,
-        float guardOuterRange = 30f)
+        float guardOuterRange = 30f,
+        float fleeHealthThreshold = 0.3f)
     {
         // Same priority logic — leader always has an attack slot
         return ResolveGOAPBoidGoal(
             healthPercent, playerNearby, cooldownReady, isRanged,
             playerDist, isIsolated, flockCount,
             attackSlotAvailable: true,
-            criticalHealthThreshold, kiteMinDistance, guardInnerRange, guardOuterRange);
+            criticalHealthThreshold, kiteMinDistance, guardInnerRange, guardOuterRange,
+            fleeHealthThreshold);
     }
 }

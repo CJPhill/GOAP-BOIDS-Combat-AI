@@ -238,9 +238,17 @@ public class BehavioralMetricsCollector : MonoBehaviour
             foreach (var mgr in managers)
             {
                 int boidCount = mgr.BoidCount;
+                bool isRanged = mgr.Settings != null && mgr.Settings.flockType == FlockType.Ranged;
                 switch (mgr.State)
                 {
-                    case FlockManager.FlockState.Engaging: snapshot.goalAttack += boidCount; break;
+                    // Split Engaging into melee vs ranged so PureBOIDS ranged flocks
+                    // show up in the RangedAttack column, matching how GOAP conditions
+                    // distinguish the two. Without this split goalRangedAttack is
+                    // always 0 for PureBOIDS (investigated 2026-04-23 QA pass).
+                    case FlockManager.FlockState.Engaging:
+                        if (isRanged) snapshot.goalRangedAttack += boidCount;
+                        else          snapshot.goalAttack += boidCount;
+                        break;
                     case FlockManager.FlockState.Kiting: snapshot.goalKite += boidCount; break;
                     case FlockManager.FlockState.Fleeing: snapshot.goalFlee += boidCount; break;
                     case FlockManager.FlockState.Scattering: snapshot.goalScatter += boidCount; break;

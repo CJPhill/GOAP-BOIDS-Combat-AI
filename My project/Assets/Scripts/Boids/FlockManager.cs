@@ -41,6 +41,14 @@ public class FlockManager : MonoBehaviour
     // flock tightens back within regroupRadius (see UpdateFlockState).
     private float scatterTimer;
 
+    // Minimum dwell time in a state before another transition is allowed.
+    // Without this the resolver oscillates at frame rate when a continuous input
+    // (HP%, playerDist) sits right at a threshold — hundreds of Fleeing↔Guarding
+    // flips per second were observed in the 2026-04-23 pilot before this guard
+    // was added. Scattering has its own timer and is exempt.
+    private const float MinStateDwellSeconds = 0.25f;
+    private float stateEnterTime = -999f;
+
     // Tuning-parity overrides set by ConditionManager before Start() fires so
     // conditions 2/3/4 spawn identical flock sizes + HP pools.
     private int flockSizeOverride = -1;
@@ -420,6 +428,18 @@ public class FlockManager : MonoBehaviour
         // FlockBehavior and FlockState are declared in the same order so a cast is safe.
         FlockState newState = (FlockState)(int)behavior;
 
+        // Minimum-dwell hysteresis: if we just changed state, don't flip again for
+        // MinStateDwellSeconds. Scattering is exempt because it has its own timer
+        // (and Scattering override always represents a critical-HP panic).
+        bool allowTransition =
+            newState == state
+            || newState == FlockState.Scattering
+            || Time.time - stateEnterTime >= MinStateDwellSeconds;
+        if (!allowTransition)
+        {
+            return;
+        }
+
         // Scattering entry: arm the timer and cancel in-flight attacks.
         if (newState == FlockState.Scattering && state != FlockState.Scattering)
         {
@@ -438,6 +458,7 @@ public class FlockManager : MonoBehaviour
         {
             BehavioralMetricsCollector.Instance?.LogEvent(
                 "GoalChange", gameObject.name, (int)settings.flockType, $"{state}→{newState}");
+            stateEnterTime = Time.time;
         }
 
         state = newState;

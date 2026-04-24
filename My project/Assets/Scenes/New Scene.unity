@@ -1632,10 +1632,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
-  runsPerCondition: 10
+  runsPerCondition: 2
   baseSeed: 42
   transitionDelay: 3
   conditionsToTest: 010000000200000003000000
+  agentCountsToTest: 190000003200000064000000c80000009001000020030000
   outputDirectory: 
   isRunning: 0
   currentRunIndex: -1

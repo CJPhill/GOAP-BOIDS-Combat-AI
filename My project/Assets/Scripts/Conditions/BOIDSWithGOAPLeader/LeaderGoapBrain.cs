@@ -69,6 +69,7 @@ public class LeaderGoapBrain : MonoBehaviour
         float guardOuter = boid.settings != null ? boid.settings.guardOuterRange : 30f;
         float kiteMin = boid.settings != null ? boid.settings.kiteMinDistance : 8f;
         float isolationThreshold = boid.settings != null ? boid.settings.isolationThreshold : 20f;
+        float fleeThreshold = boid.settings != null ? boid.settings.fleeHealthThreshold : 0.3f;
 
         bool isIsolated = boid.manager != null &&
             Vector3.Distance(transform.position, boid.manager.GetFlockCenter()) > isolationThreshold;
@@ -77,7 +78,7 @@ public class LeaderGoapBrain : MonoBehaviour
         var goal = GoalPriorityResolver.ResolveLeaderGoal(
             healthPercent, playerNearby, cooldownReady, isRanged,
             playerDist, isIsolated, flockCount,
-            criticalThreshold, kiteMin, guardInner, guardOuter);
+            criticalThreshold, kiteMin, guardInner, guardOuter, fleeThreshold);
 
         currentGoalType = goal;
 
