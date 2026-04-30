@@ -30,6 +30,10 @@ public class LeaderFleeAction : GoapActionBase<LeaderFleeAction.Data>
         else
             data.FleeDirection = data.Boid.cachedTransform.forward;
 
+        // Reproducibility contract: relies on ConditionManager.SetSeed → Random.InitState
+        // being called once per trial, and on the leader's goal-selection tick order being
+        // deterministic. Covered by ReproducibilityTests.LeaderActionTimers_AreDeterministic
+        // and the broader SameSeed_ProducesIdentical* tests.
         data.FleeTimer = Random.Range(3f, 5f);
 
         if (data.Brain != null)

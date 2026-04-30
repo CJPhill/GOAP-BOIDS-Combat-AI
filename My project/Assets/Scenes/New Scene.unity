@@ -247,7 +247,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b9c146ec8d47e6947a2450b9ede6a16e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
-  maxHealth: 100
+  maxHealth: 300
 --- !u!114 &49173744
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1589,7 +1589,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b79ab7f3a52e7d4096634e060ad0003, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ConditionManager
-  CurrentCondition: 3
+  CurrentCondition: 2
   agentCount: 100
   spawnRadius: 15
   rangedAgentRatio: 0.3
@@ -1600,7 +1600,7 @@ MonoBehaviour:
   goapWithBOIDSMovementPrefab: {fileID: 1458949725028823893, guid: b5b2e4ba7071511458866e72b376f001, type: 3}
   useFixedSeed: 1
   randomSeed: 42
-  comparisonHPPerFlock: 3000
+  comparisonHPPerFlock: 5000
   spawnedAgents: []
   goapBehaviour: {fileID: 2035265743}
   playerTransform: {fileID: 0}
@@ -1632,9 +1632,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
-  runsPerCondition: 2
+  runsPerCondition: 10
   baseSeed: 42
-  transitionDelay: 3
+  transitionDelay: 0.5
   conditionsToTest: 010000000200000003000000
   agentCountsToTest: 190000003200000064000000c80000009001000020030000
   outputDirectory: 

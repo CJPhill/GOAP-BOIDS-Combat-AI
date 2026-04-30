@@ -113,6 +113,29 @@ public class ConditionManager : MonoBehaviour
 
     public int AgentCount => agentCount;
 
+    /// <summary>
+    /// Toggles stress-mode invulnerability across the player and every spawned flock manager.
+    /// In stress mode (true), `PlayerHealth.IsInvulnerableMode` and every flock's `SuspendDamage`
+    /// flag are set so no damage lands and live agent count stays at the configured N for the
+    /// full trial — giving the FPS benchmark a fixed compute load to compare across conditions.
+    /// In combat mode (false), all flags are cleared and the existing damage system runs as
+    /// before. ExperimentRunner calls this before each trial. See [[methodology-revisions-2026-04]]
+    /// item 1 / 3b for context.
+    /// </summary>
+    public void SetStressMode(bool stress)
+    {
+        if (playerTransform != null)
+        {
+            var ph = playerTransform.GetComponent<PlayerHealth>();
+            if (ph != null) ph.IsInvulnerableMode = stress;
+        }
+
+        foreach (var fm in FindObjectsByType<FlockManager>(FindObjectsSortMode.None))
+            fm.SuspendDamage = stress;
+        foreach (var gfm in FindObjectsByType<GOAPBoidFlockManager>(FindObjectsSortMode.None))
+            gfm.SuspendDamage = stress;
+    }
+
     [Header("Reproducibility")]
     [Tooltip("Use a fixed seed so spawns and Random-based behavior are identical across runs.")]
     [SerializeField] private bool useFixedSeed = true;

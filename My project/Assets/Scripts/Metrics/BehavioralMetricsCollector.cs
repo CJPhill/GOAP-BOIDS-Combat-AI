@@ -24,6 +24,16 @@ public class BehavioralMetricsCollector : MonoBehaviour
     // Per-trial run identifiers (populated by ExperimentRunner before StartRecording).
     private int currentRunId = 0;
     private int currentSeed = 0;
+    private string currentMode = "Combat";
+
+    // Combat-effectiveness accumulators (methodology-revisions-2026-04 item 2).
+    // Reset every StartRecording, snapshotted at trial end via the public getters
+    // below. In stress mode all values stay at zero / -1 since damage is suppressed —
+    // the trial summary CSV reports them anyway so the column schema is mode-uniform.
+    private float trialStartTime = 0f;
+    private float totalDamageToPlayer = 0f;
+    private float firstHitTime = -1f;        // -1 sentinel = no hit landed
+    private int agentsKilledByPlayer = 0;
 
     // Stimulus-to-response reaction-time tracking.
     // Key = flockId; value = first SetTarget timestamp within this trial.
@@ -41,6 +51,7 @@ public class BehavioralMetricsCollector : MonoBehaviour
     public struct GoalDistributionSnapshot
     {
         public float time;
+        public string mode;
         public string condition;
         public int runId;
         public int seed;
@@ -61,6 +72,7 @@ public class BehavioralMetricsCollector : MonoBehaviour
     public struct BehavioralEvent
     {
         public float time;
+        public string mode;
         public string condition;
         public int runId;
         public int seed;
@@ -89,21 +101,30 @@ public class BehavioralMetricsCollector : MonoBehaviour
 
     /// <summary>
     /// Simple-mode recording start (no batch context). Keeps backward compat with
-    /// editor menu items that don't pass run info.
+    /// editor menu items that don't pass run info — defaults mode to Combat.
     /// </summary>
-    public void StartRecording() => StartRecording(runId: 0, seed: 0);
+    public void StartRecording() => StartRecording(runId: 0, seed: 0, mode: BenchmarkMode.Combat);
 
-    public void StartRecording(int runId, int seed)
+    /// <summary>Two-arg overload kept for callers that don't yet thread BenchmarkMode through.</summary>
+    public void StartRecording(int runId, int seed) => StartRecording(runId, seed, BenchmarkMode.Combat);
+
+    public void StartRecording(int runId, int seed, BenchmarkMode mode)
     {
         isRecording = true;
         nextSampleTime = Time.time;
         currentRunId = runId;
         currentSeed = seed;
+        currentMode = mode.ToString();
         snapshots.Clear();
         eventLog.Clear();
         stimulusTimeByFlock.Clear();
         responseTimeByFlock.Clear();
-        Debug.Log($"[BehavioralMetrics] Recording started (run={runId}, seed={seed}).");
+        // Reset combat-effectiveness accumulators (item 2).
+        trialStartTime = Time.time;
+        totalDamageToPlayer = 0f;
+        firstHitTime = -1f;
+        agentsKilledByPlayer = 0;
+        Debug.Log($"[BehavioralMetrics] Recording started (mode={mode}, run={runId}, seed={seed}).");
     }
 
     public void StopRecording()
@@ -127,6 +148,7 @@ public class BehavioralMetricsCollector : MonoBehaviour
         eventLog.Add(new BehavioralEvent
         {
             time = now,
+            mode = currentMode,
             condition = conditionManager != null ? conditionManager.CurrentCondition.ToString() : "Unknown",
             runId = currentRunId,
             seed = currentSeed,
@@ -157,6 +179,50 @@ public class BehavioralMetricsCollector : MonoBehaviour
         }
     }
 
+    // ── Combat-effectiveness recording (methodology-revisions-2026-04 item 2) ──
+
+    /// <summary>
+    /// Called by <see cref="PlayerHealth.TakeDamage"/> when damage actually lands
+    /// (i.e. after invulnerability gates). Accumulates total damage and tracks the
+    /// trial's first hit, then logs the existing PlayerDamage event so analysis
+    /// scripts that already consume the event log keep working unchanged.
+    /// </summary>
+    public void RecordPlayerDamage(float amount, string sourceName, float hpAfter)
+    {
+        if (!isRecording) return;
+        totalDamageToPlayer += amount;
+        if (firstHitTime < 0f) firstHitTime = Time.time;
+        LogEvent("PlayerDamage", sourceName, -1, $"Amount={amount:F1},HP={hpAfter:F1}");
+    }
+
+    /// <summary>
+    /// Called by flock managers when pooled HP drains and they cull an agent.
+    /// In our trial setup the player is the only damage source, so the cull
+    /// count is a faithful measure of player-killed agents. Stress mode
+    /// suppresses damage, so this counter stays at zero there.
+    /// </summary>
+    public void RecordAgentDeath()
+    {
+        if (!isRecording) return;
+        agentsKilledByPlayer++;
+    }
+
+    /// <summary>Total HP dealt to the player across the trial.</summary>
+    public float TotalDamageToPlayer => totalDamageToPlayer;
+
+    /// <summary>Damage / second; -1 if duration is non-positive.</summary>
+    public float DamagePerSecondToPlayer => Time.time > trialStartTime
+        ? totalDamageToPlayer / (Time.time - trialStartTime)
+        : -1f;
+
+    /// <summary>Milliseconds from trial start to first damage on the player. -1 if no hit.</summary>
+    public float FirstHitMs => firstHitTime < 0f
+        ? -1f
+        : (firstHitTime - trialStartTime) * 1000f;
+
+    /// <summary>Count of agents culled from pooled HP across all flocks this trial.</summary>
+    public int AgentsKilledByPlayer => agentsKilledByPlayer;
+
     private static bool IsActiveGoalDetail(string details)
     {
         if (string.IsNullOrEmpty(details)) return false;
@@ -174,6 +240,7 @@ public class BehavioralMetricsCollector : MonoBehaviour
         var snapshot = new GoalDistributionSnapshot
         {
             time = Time.time,
+            mode = currentMode,
             condition = condition,
             runId = currentRunId,
             seed = currentSeed,
@@ -385,11 +452,11 @@ public class BehavioralMetricsCollector : MonoBehaviour
         bool fileExists = System.IO.File.Exists(filepath);
         var csv = new StringBuilder();
         if (!fileExists)
-            csv.AppendLine("Time,Condition,RunId,Seed,TotalAgents,FlockCoherence,Attack,RangedAttack,Flee,Scatter,Regroup,Flank,Guard,Wander,Kite");
+            csv.AppendLine("Time,BenchmarkMode,Condition,RunId,Seed,TotalAgents,FlockCoherence,Attack,RangedAttack,Flee,Scatter,Regroup,Flank,Guard,Wander,Kite");
 
         foreach (var s in snapshots)
         {
-            csv.AppendLine($"{s.time:F2},{s.condition},{s.runId},{s.seed},{s.totalAgents},{s.flockCoherence:F2}," +
+            csv.AppendLine($"{s.time:F2},{s.mode},{s.condition},{s.runId},{s.seed},{s.totalAgents},{s.flockCoherence:F2}," +
                 $"{s.goalAttack},{s.goalRangedAttack},{s.goalFlee},{s.goalScatter}," +
                 $"{s.goalRegroup},{s.goalFlank},{s.goalGuard},{s.goalWander},{s.goalKite}");
         }
@@ -406,11 +473,11 @@ public class BehavioralMetricsCollector : MonoBehaviour
         bool fileExists = System.IO.File.Exists(filepath);
         var csv = new StringBuilder();
         if (!fileExists)
-            csv.AppendLine("Time,Condition,RunId,Seed,EventType,AgentName,FlockId,Details");
+            csv.AppendLine("Time,BenchmarkMode,Condition,RunId,Seed,EventType,AgentName,FlockId,Details");
 
         foreach (var e in eventLog)
         {
-            csv.AppendLine($"{e.time:F3},{e.condition},{e.runId},{e.seed},{e.eventType},{e.agentName},{e.flockId},{e.details}");
+            csv.AppendLine($"{e.time:F3},{e.mode},{e.condition},{e.runId},{e.seed},{e.eventType},{e.agentName},{e.flockId},{e.details}");
         }
 
         if (fileExists)
@@ -426,6 +493,7 @@ public class BehavioralMetricsCollector : MonoBehaviour
     /// </summary>
     public void AppendTrialSummaryRow(
         string filepath,
+        string mode,
         string condition,
         int configuredAgentCount,
         int runId,
@@ -438,16 +506,27 @@ public class BehavioralMetricsCollector : MonoBehaviour
         float avgFPS,
         float avgCpuTimeMs,
         float avgCpuTimeMsPerAgent,
-        int maxAgentCount)
+        int maxAgentCount,
+        float avgGcMemoryMB = 0f,
+        float avgMonoUsedMB = 0f,
+        float avgTotalAllocatedMB = 0f,
+        // Combat-effectiveness metrics (methodology-revisions-2026-04 item 2).
+        // Defaulted so editor/contextual callers without these values still compile.
+        float totalDamageToPlayer = 0f,
+        float damagePerSecondToPlayer = 0f,
+        float firstHitMs = -1f,
+        int agentsKilledByPlayer = 0)
     {
         bool fileExists = System.IO.File.Exists(filepath);
         var sb = new StringBuilder();
         if (!fileExists)
-            sb.AppendLine("Condition,AgentCount,RunId,Seed,Outcome,DurationSec,ReactionMeleeMs,ReactionRangedMs,GoalEntropy,AvgFPS,AvgCpuMs,AvgCpuMsPerAgent,MaxAgentCount");
+            sb.AppendLine("BenchmarkMode,Condition,AgentCount,RunId,Seed,Outcome,DurationSec,ReactionMeleeMs,ReactionRangedMs,GoalEntropy,AvgFPS,AvgCpuMs,AvgCpuMsPerAgent,MaxAgentCount,AvgGcMemoryMB,AvgMonoUsedMB,AvgTotalAllocatedMB,TotalDamageToPlayer,DamagePerSecondToPlayer,FirstHitMs,AgentsKilledByPlayer");
 
-        sb.AppendLine($"{condition},{configuredAgentCount},{runId},{seed},{outcome},{actualDuration:F2}," +
+        sb.AppendLine($"{mode},{condition},{configuredAgentCount},{runId},{seed},{outcome},{actualDuration:F2}," +
                       $"{reactionMeleeMs:F1},{reactionRangedMs:F1},{goalEntropy:F3}," +
-                      $"{avgFPS:F1},{avgCpuTimeMs:F3},{avgCpuTimeMsPerAgent:F3},{maxAgentCount}");
+                      $"{avgFPS:F1},{avgCpuTimeMs:F3},{avgCpuTimeMsPerAgent:F3},{maxAgentCount}," +
+                      $"{avgGcMemoryMB:F2},{avgMonoUsedMB:F2},{avgTotalAllocatedMB:F2}," +
+                      $"{totalDamageToPlayer:F1},{damagePerSecondToPlayer:F2},{firstHitMs:F1},{agentsKilledByPlayer}");
 
         if (fileExists)
             System.IO.File.AppendAllText(filepath, sb.ToString());
@@ -456,18 +535,20 @@ public class BehavioralMetricsCollector : MonoBehaviour
     }
 
     #if UNITY_EDITOR
-    [ContextMenu("Export Goal Distribution to Desktop")]
+    [ContextMenu("Export Goal Distribution")]
     private void EditorExportGoals()
     {
-        string desktop = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+        string desktop = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", "ExperimentResults"));
+        System.IO.Directory.CreateDirectory(desktop);
         string filename = $"GoalDistribution_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv";
         ExportGoalDistribution(System.IO.Path.Combine(desktop, filename));
     }
 
-    [ContextMenu("Export Event Log to Desktop")]
+    [ContextMenu("Export Event Log")]
     private void EditorExportEvents()
     {
-        string desktop = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+        string desktop = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", "ExperimentResults"));
+        System.IO.Directory.CreateDirectory(desktop);
         string filename = $"EventLog_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv";
         ExportEventLog(System.IO.Path.Combine(desktop, filename));
     }

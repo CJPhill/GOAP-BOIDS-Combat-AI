@@ -40,7 +40,8 @@ public static class FlockStateResolver
         float kiteMinDistance = 8f,
         float isolationThreshold = 20f,
         float guardInnerRange = 15f,
-        float guardOuterRange = 30f)
+        float guardOuterRange = 30f,
+        bool flockCooldownActive = false)
     {
         // 1. Scattering — critical HP panic overrides everything
         if (hasTarget && playerNearby && healthPercent < criticalHealthThreshold)
@@ -54,11 +55,19 @@ public static class FlockStateResolver
         if (hasTarget && playerNearby && isRanged && playerDist < kiteMinDistance)
             return FlockBehavior.Kiting;
 
-        // 4. Flanking — attack slots full & a flock wave is already in progress.
-        //    Takes priority over Engaging so the extra agents pick a side angle
-        //    instead of queueing behind a full attacker pool. Mirrors GOAP's Flank
-        //    which fires when slotAvailable=false.
-        if (hasTarget && playerNearby && attackSlotsSaturated && (meleeAttackActive || rangedAttackActive))
+        // 4. Flanking — the flock WOULD engage but can't right now, so reposition.
+        //    Mirrors GoalPriorityResolver: GOAP flanks when `playerNearby && !cooldownReady`
+        //    or `!attackSlotAvailable` and `flockCount >= 3`. PureBOIDS's analogues are
+        //    `flockCooldownActive` (melee/ranged flock timer > 0), `attackSlotsSaturated`
+        //    (individual WindUp slot count at cap), or an already-active wave/volley
+        //    (mele/rangedAttackActive). The boidCount >= 3 gate matches GOAP's flockCount
+        //    gate, so the proactive flank only fires when there are enough agents for a
+        //    pincer. This replaces the previous reactive-only rule that required an
+        //    attack wave to already be active — that gap made PureBOIDS skip Flank when
+        //    the flock was on cooldown but idle, violating cross-condition behavioral
+        //    parity (Condition 2 vs Conditions 3/4).
+        if (hasTarget && playerNearby && boidCount >= 3
+            && (attackSlotsSaturated || meleeAttackActive || rangedAttackActive || flockCooldownActive))
             return FlockBehavior.Flanking;
 
         // 5. Engaging — attack range, healthy, clustered, slots free

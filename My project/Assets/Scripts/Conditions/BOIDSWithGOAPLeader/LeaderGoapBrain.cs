@@ -114,9 +114,10 @@ public class LeaderGoapBrain : MonoBehaviour
                 provider.RequestGoal<LeaderWanderGoal>(); break;
         }
 
-        // Leash: if leader is overriding movement and has outrun the flock, slow down
-        // so followers can catch up rather than the leader abandoning the group.
-        if (brain != null && brain.isMovementOverridden && boid.manager != null)
+        // Leash: if the leader has outrun the flock, slow down so followers can catch up
+        // rather than the leader abandoning the group. Applied unconditionally — previously
+        // gated on isMovementOverridden, which left Wander/Idle phases leashless.
+        if (boid.manager != null)
         {
             Vector3 flockCenter = boid.manager.GetFlockCenter();
             float dist = Vector3.Distance(transform.position, flockCenter);

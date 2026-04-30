@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Writes PureGOAP agent debug info to a log file each frame.
-/// Attach to any GameObject in the scene. Logs to Desktop/goap_debug.log.
+/// Attach to any GameObject in the scene. Logs to ExperimentResults/goap_debug.log.
 /// Only logs while agents exist. Samples every 0.5s to keep file manageable.
 /// </summary>
 public class PureGOAPDebugLog : MonoBehaviour
@@ -17,7 +17,9 @@ public class PureGOAPDebugLog : MonoBehaviour
 
     private void Awake()
     {
-        logPath = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop), "goap_debug.log");
+        string logDir = System.IO.Path.GetFullPath(Path.Combine(Application.dataPath, "..", "ExperimentResults"));
+        Directory.CreateDirectory(logDir);
+        logPath = Path.Combine(logDir, "goap_debug.log");
         writer = new StreamWriter(logPath, false);
         writer.WriteLine("=== PureGOAP Debug Log ===");
         writer.WriteLine($"Started: {System.DateTime.Now}");

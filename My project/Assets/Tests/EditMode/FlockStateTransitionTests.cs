@@ -21,7 +21,8 @@ public class FlockStateTransitionTests
         bool rangedAttackActive = false,
         float maxDistanceFromCentroid = 3f,
         int boidCount = 5,
-        bool clusteredEnoughToEngage = true)
+        bool clusteredEnoughToEngage = true,
+        bool flockCooldownActive = false)
     {
         return FlockStateResolver.Resolve(
             healthPercent: hp,
@@ -34,7 +35,8 @@ public class FlockStateTransitionTests
             rangedAttackActive: rangedAttackActive,
             maxDistanceFromCentroid: maxDistanceFromCentroid,
             boidCount: boidCount,
-            clusteredEnoughToEngage: clusteredEnoughToEngage);
+            clusteredEnoughToEngage: clusteredEnoughToEngage,
+            flockCooldownActive: flockCooldownActive);
     }
 
     [Test]
@@ -133,5 +135,68 @@ public class FlockStateTransitionTests
         // playerDist in [15,30] and playerNearby=true and clustered → Engage wins.
         Assert.AreEqual(FlockBehavior.Engaging,
             Resolve(playerDist: 18f, clusteredEnoughToEngage: true));
+    }
+
+    // ── Flanking parity (Condition 2 ↔ Conditions 3/4) ──
+    //
+    // GOAP flanks proactively when `playerNearby && !cooldownReady && flockCount>=3`.
+    // Before the fix, FlockStateResolver only flanked when a wave was ALREADY active.
+    // These tests exercise the three proactive-flank triggers added in the fix.
+
+    [Test]
+    public void Flanks_Proactively_OnFlockCooldown()
+    {
+        // Flock on post-attack cooldown but otherwise healthy and in range → should
+        // flank, mirroring GOAP's !cooldownReady flank trigger.
+        Assert.AreEqual(FlockBehavior.Flanking,
+            Resolve(flockCooldownActive: true, boidCount: 5));
+    }
+
+    [Test]
+    public void Flanks_Proactively_WhenSlotsSaturated_NoActiveWave()
+    {
+        // Individual attack slots all in WindUp — a wave hasn't started but the
+        // flock can't add more attackers. Mirrors GOAP's !attackSlotAvailable flank.
+        Assert.AreEqual(FlockBehavior.Flanking,
+            Resolve(attackSlotsSaturated: true, meleeAttackActive: false, rangedAttackActive: false, boidCount: 5));
+    }
+
+    [Test]
+    public void DoesNotFlank_WhenFlockTooSmall()
+    {
+        // GOAP's flockCount>=3 gate applies here too — 2 boids on cooldown should
+        // Engage (close) rather than flank.
+        Assert.AreEqual(FlockBehavior.Engaging,
+            Resolve(flockCooldownActive: true, boidCount: 2));
+    }
+
+    [Test]
+    public void Flanks_OverEngage_WhenCooldownActive_AndClustered()
+    {
+        // Priority: Flank (can't engage) should beat Engage when the blocker is active.
+        Assert.AreEqual(FlockBehavior.Flanking,
+            Resolve(flockCooldownActive: true, boidCount: 4, clusteredEnoughToEngage: true));
+    }
+
+    [Test]
+    public void ScatterBeatsFlank_AtCriticalHealth()
+    {
+        // Even with flock on cooldown, critical-HP scatter outranks flank.
+        Assert.AreEqual(FlockBehavior.Scattering,
+            Resolve(hp: 0.10f, flockCooldownActive: true, boidCount: 5));
+    }
+
+    [Test]
+    public void FleeBeatsFlank_AtLowHealth()
+    {
+        Assert.AreEqual(FlockBehavior.Fleeing,
+            Resolve(hp: 0.25f, flockCooldownActive: true, boidCount: 5));
+    }
+
+    [Test]
+    public void KiteBeatsFlank_ForRangedAtClose()
+    {
+        Assert.AreEqual(FlockBehavior.Kiting,
+            Resolve(isRanged: true, playerDist: 5f, flockCooldownActive: true, boidCount: 5));
     }
 }

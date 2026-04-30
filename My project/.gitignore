@@ -35,6 +35,7 @@ ExportedObj/
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
@@ -70,3 +71,8 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Raw benchmark dumps — regenerable by running ExperimentRunner.
+# Per-frame Performance CSVs can exceed GitHub's 100MB single-file limit.
+# Distilled outputs live in ../analysis/tables/ and the analysis notebook.
+/ExperimentResults/

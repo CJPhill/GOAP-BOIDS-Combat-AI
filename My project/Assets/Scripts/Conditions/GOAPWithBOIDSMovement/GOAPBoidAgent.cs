@@ -27,11 +27,17 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     private static readonly Dictionary<int, int> currentAttackersByFlock = new Dictionary<int, int>();
     private static readonly Dictionary<int, int> maxAttackersByFlock = new Dictionary<int, int>();
 
+    // Tracks the frame on which each flock's swarm cooldown was last decremented.
+    // Lets any agent in the flock claim the tick for a frame, without scanning the
+    // AllAgents list to decide who goes first (was O(n) per agent; now O(1)).
+    private static readonly Dictionary<int, int> lastSwarmCooldownTickFrame = new Dictionary<int, int>();
+
     public static void ResetAttackSlots()
     {
         currentAttackersByFlock.Clear();
         maxAttackersByFlock.Clear();
         swarmCooldownByFlock.Clear();
+        lastSwarmCooldownTickFrame.Clear();
     }
 
     /// <summary>
@@ -124,6 +130,12 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     [HideInInspector] public Transform targetPlayer;
     [HideInInspector] public bool isScattering;
     [HideInInspector] public int flockId;
+
+    // Subgroup bucket for Scatter — set by GOAPBoidFlockManager.RegisterAgent so
+    // ScatterDirectionPicker can partition the swarm into a few coherent dispersal
+    // directions rather than each agent picking independently. Mirrors
+    // FlockManager.ScatterSubgroupCount (Condition 2/3).
+    [HideInInspector] public int subgroupId;
 
     // Flock-level glue (set by GOAPBoidFlockManager when condition 4 is spawned).
     // Null in tests that instantiate bare agents — all manager paths null-check.
@@ -238,36 +250,36 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
         if (cooldownTimer > 0f)
             cooldownTimer -= Time.deltaTime;
 
-        // Tick per-flock swarm cooldown (only first agent per flock ticks to avoid multi-decrement)
-        if (swarmCooldownByFlock.ContainsKey(flockId) && swarmCooldownByFlock[flockId] > 0f)
+        // Tick per-flock swarm cooldown exactly once per frame. Whichever agent in the
+        // flock runs Update first for a given frame claims the tick; all later siblings
+        // see lastSwarmCooldownTickFrame[flockId] == Time.frameCount and skip. This is
+        // O(1) per agent, no AllAgents scan — critical at 400+ agents.
+        if (swarmCooldownByFlock.TryGetValue(flockId, out float cd) && cd > 0f)
         {
-            // Only tick once per flock per frame: the first agent in AllAgents with this flockId
-            bool isFirstInFlock = true;
-            for (int i = 0; i < AllAgents.Count; i++)
+            int currentFrame = Time.frameCount;
+            if (!lastSwarmCooldownTickFrame.TryGetValue(flockId, out int tickedAt) || tickedAt != currentFrame)
             {
-                if (AllAgents[i].flockId == flockId)
-                {
-                    isFirstInFlock = (AllAgents[i] == this);
-                    break;
-                }
+                swarmCooldownByFlock[flockId] = cd - Time.deltaTime;
+                lastSwarmCooldownTickFrame[flockId] = currentFrame;
             }
-            if (isFirstInFlock)
-                swarmCooldownByFlock[flockId] -= Time.deltaTime;
         }
 
         // GOAP actions set velocity via SteerToward/SetVelocity.
         // BOIDS forces layer on top — always active.
 
-        // Obstacle avoidance
+        // Obstacle avoidance — additive steering, not velocity replacement.
+        // Previously this overwrote velocity, which then fought the BOIDS centroid leash
+        // each frame and stalled the agent against geometry. Treat avoidance as a steering
+        // force (scaled by maxSteerForce) and gate the leash when it fires this frame.
         Vector3 avoidDir = ComputeObstacleAvoidance();
-        if (avoidDir.sqrMagnitude > 0.001f)
-        {
-            float currentSpeed = velocity.magnitude;
-            velocity = avoidDir.normalized * currentSpeed;
-        }
+        bool avoidActive = avoidDir.sqrMagnitude > 0.001f;
+        if (avoidActive)
+            velocity += avoidDir.normalized * maxSteerForce * 2f * Time.deltaTime;
 
-        // BOIDS forces: separation + alignment + cohesion (always on)
-        Vector3 boidsForce = ComputeBoidsForces();
+        // BOIDS forces: separation + alignment + cohesion (always on).
+        // Suppress the centroid leash this frame when avoidance fired so the leash
+        // does not pull the agent back into the wall.
+        Vector3 boidsForce = ComputeBoidsForces(suppressLeash: avoidActive);
         velocity += boidsForce * Time.deltaTime;
 
         // Boundary containment
@@ -326,8 +338,11 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
     /// <summary>
     /// Full BOIDS forces: separation + alignment + cohesion.
     /// This is what makes this condition different from PureGOAP (which only has separation).
+    /// When <paramref name="suppressLeash"/> is true, the centroid leash is skipped — used
+    /// when obstacle avoidance fired this frame to prevent the leash pulling the agent
+    /// back into the wall.
     /// </summary>
-    private Vector3 ComputeBoidsForces()
+    private Vector3 ComputeBoidsForces(bool suppressLeash = false)
     {
         if (AllAgents.Count <= 1)
             return Vector3.zero;
@@ -390,7 +405,7 @@ public class GOAPBoidAgent : MonoBehaviour, IEnemy
         // Centroid leash (manager-driven). Kicks in when this agent drifts past
         // LeashRadius from the flock's cached centroid — acts as a failsafe when
         // GOAP steers an agent farther than local cohesion can reach.
-        if (flockManager != null && !isScattering)
+        if (flockManager != null && !isScattering && !suppressLeash)
         {
             Vector3 toCentroid = flockManager.Centroid - myPos;
             float dist = toCentroid.magnitude;

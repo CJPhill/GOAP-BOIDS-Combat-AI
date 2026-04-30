@@ -87,6 +87,33 @@ public class BoidGoapBrain : MonoBehaviour
             cooldownTimer -= Time.deltaTime;
 
         // ── Goal selection ─────────────────────────────────────────
+
+        // Leader-mimic path (BOIDSWithGOAPLeader): when this boid is a non-leader
+        // follower and the leader is performing Attack/Kite, mirror the leader's
+        // combat style. Without this, followers stay in FlockGoal because the
+        // FSM is suppressed by useGoap and manager.State never reaches Engaging,
+        // so the leader fights solo while the flock just coheres.
+        var leader = manager.LeaderBoid;
+        bool isFollower = leader != null && boid != leader;
+        if (isFollower && cooldownTimer <= 0f && manager.CanAttack && !manager.IsDead)
+        {
+            var leaderBrain = leader.GetComponent<LeaderGoapBrain>();
+            if (leaderBrain != null)
+            {
+                var lg = leaderBrain.currentGoalType;
+                bool leaderAttacking = lg == GoalPriorityResolver.GoalType.Attack
+                                    || lg == GoalPriorityResolver.GoalType.Kite;
+                if (leaderAttacking)
+                {
+                    if (leader.settings.flockType == FlockType.Melee)
+                        provider.RequestGoal<MeleeAttackGoal>();
+                    else
+                        provider.RequestGoal<RangedAttackGoal>();
+                    return;
+                }
+            }
+        }
+
         if (manager.State != FlockManager.FlockState.Engaging || manager.IsDead)
         {
             provider.RequestGoal<FlockGoal>();

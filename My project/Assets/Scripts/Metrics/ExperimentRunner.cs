@@ -3,6 +3,17 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
+/// Which benchmark mode a trial runs in.
+/// Combat: current behaviour — damage on, variable duration, terminates on PlayerDeath /
+/// FlockWiped / TimeLimit. Sources RQ2 (behavioural effectiveness) data.
+/// Stress: player + flock pooled HP invulnerable for the trial. Live agent count stays
+/// at the configured N for the full <see cref="ExperimentRunner.experimentDuration"/>,
+/// removing the death-rate confound that contaminates per-trial FPS comparisons. Sources
+/// RQ1 (computational scaling) data. See [[methodology-revisions-2026-04]] items 1 / 3b.
+/// </summary>
+public enum BenchmarkMode { Combat, Stress }
+
+/// <summary>
 /// Automated experiment runner for thesis data collection.
 ///
 /// Each invocation runs a **batch** of trials: <see cref="runsPerCondition"/>
@@ -39,6 +50,15 @@ public class ExperimentRunner : MonoBehaviour
     [Tooltip("Delay between trials for scene cleanup (seconds).")]
     [SerializeField] private float transitionDelay = 2f;
 
+    [Tooltip("Wall-clock seconds between recording start and ForceStimulusOnAllFlocks(). " +
+             "Prevents spawn-startup events from leaking into reaction-time measurements " +
+             "(see methodology-revisions-2026-04 item 5). Defaults to 5s, matching the " +
+             "warmup-trim window used for FPS/CPU steady-state analysis. Reaction-time " +
+             "recording is anchored at stimulus fire, so the warmup + reaction-time clock " +
+             "are aligned: everything before t=warmup is spawn-startup data, everything " +
+             "after is steady-state.")]
+    [SerializeField] private float stimulusWarmupSec = 5f;
+
     [Tooltip("Which conditions to compare.")]
     [SerializeField] private AgentCondition[] conditionsToTest = new[]
     {
@@ -49,11 +69,17 @@ public class ExperimentRunner : MonoBehaviour
 
     [Tooltip("Agent counts to sweep. Default [100] reproduces the original single-size batch. " +
              "[50, 100, 200, 400] adds a 4-point scaling curve. " +
-             "Total trials = sizes × runs × conditions.")]
+             "Total trials = modes × sizes × runs × conditions.")]
     [SerializeField] private int[] agentCountsToTest = new[] { 100 };
 
+    [Tooltip("Benchmark modes to run. Combat (default) = current behaviour, damage on, " +
+             "variable duration. Stress = invulnerable player + flocks, fixed duration; " +
+             "isolates RQ1 perf measurement from the death-rate confound. Add Stress to " +
+             "the array (alongside or instead of Combat) before final batches.")]
+    [SerializeField] private BenchmarkMode[] modesToTest = new[] { BenchmarkMode.Combat };
+
     [Header("Output")]
-    [Tooltip("Directory for CSV output. Defaults to Desktop.")]
+    [Tooltip("Directory for CSV output. Defaults to ExperimentResults/ in the project root.")]
     [SerializeField] private string outputDirectory = "";
 
     [Header("Status (read-only)")]
@@ -88,7 +114,9 @@ public class ExperimentRunner : MonoBehaviour
         if (performanceProfiler == null) performanceProfiler = FindFirstObjectByType<PerformanceProfiler>();
 
         if (string.IsNullOrEmpty(outputDirectory))
-            outputDirectory = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+            outputDirectory = System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(Application.dataPath, "..", "ExperimentResults"));
+        System.IO.Directory.CreateDirectory(outputDirectory);
 
         if (conditionManager != null && conditionManager.playerTransform != null)
             playerHealth = conditionManager.playerTransform.GetComponent<PlayerHealth>();
@@ -139,18 +167,31 @@ public class ExperimentRunner : MonoBehaviour
         int[] sizes = agentCountsToTest;
         if (sizes == null || sizes.Length == 0) sizes = new[] { conditionManager.AgentCount };
 
-        int totalTrials = sizes.Length * runsPerCondition * conditionsToTest.Length;
+        BenchmarkMode[] modes = modesToTest;
+        if (modes == null || modes.Length == 0) modes = new[] { BenchmarkMode.Combat };
+
+        int totalTrials = modes.Length * sizes.Length * runsPerCondition * conditionsToTest.Length;
         Debug.Log($"[ExperimentRunner] Starting batch: {totalTrials} trials " +
-                  $"({sizes.Length} size(s) × {runsPerCondition} runs × {conditionsToTest.Length} conditions), " +
+                  $"({modes.Length} mode(s) × {sizes.Length} size(s) × {runsPerCondition} runs × {conditionsToTest.Length} conditions), " +
                   $"duration ≤ {experimentDuration}s each. BaseSeed={baseSeed}.");
 
-        // Track per-(size, condition) aggregates for the final text summary.
-        var perGroup = new Dictionary<(int size, AgentCondition cond), List<TrialResult>>();
+        // Track per-(mode, size, condition) aggregates for the final text summary.
+        var perGroup = new Dictionary<(BenchmarkMode mode, int size, AgentCondition cond), List<TrialResult>>();
 
-        // Size-outer, run-middle, condition-inner.
-        // Rationale: smaller sizes complete first so if the batch is interrupted
-        // we still have full data for the earlier size points. Runs interleave
-        // conditions (same as before) so each (size, run) block covers all conditions.
+        // Mode-outer, size-middle, run/condition-inner.
+        // Rationale: each mode's full data set completes before the next mode begins,
+        // so if the batch is interrupted we still have a complete set for the priority
+        // mode (combat by default; CJ reorders modesToTest to prioritise stress for
+        // RQ1-focused runs). Within a mode, smaller sizes complete first.
+        // Seed is stable across modes for the same (size, run) so combat and stress
+        // trials with the same seed share initial conditions — they are paired
+        // observations rather than independent samples, which strengthens RQ1
+        // comparisons against the same starting state.
+        for (int modeIdx = 0; modeIdx < modes.Length; modeIdx++)
+        {
+            var mode = modes[modeIdx];
+            Debug.Log($"[ExperimentRunner] === mode {mode} ({modeIdx + 1}/{modes.Length}) ===");
+
         for (int sizeIdx = 0; sizeIdx < sizes.Length; sizeIdx++)
         {
             int size = sizes[sizeIdx];
@@ -161,9 +202,8 @@ public class ExperimentRunner : MonoBehaviour
             for (int run = 0; run < runsPerCondition; run++)
             {
                 currentRunIndex = run;
-                // Unique seed per trial across the whole batch: sizeIdx offsets so
-                // the same runId at different sizes gets different seeds, keeping
-                // the EventLog / GoalDistribution CSVs joinable by Seed alone.
+                // Unique seed per (size, run); identical across modes so a stress trial
+                // and combat trial with the same (size, run) share initial conditions.
                 int seed = baseSeed + sizeIdx * runsPerCondition + run;
 
                 for (int c = 0; c < conditionsToTest.Length; c++)
@@ -171,27 +211,29 @@ public class ExperimentRunner : MonoBehaviour
                     currentConditionIndex = c;
                     var condition = conditionsToTest[c];
 
-                    Debug.Log($"[ExperimentRunner] === size={size} run={run}/{runsPerCondition - 1} cond={condition} seed={seed} ===");
+                    Debug.Log($"[ExperimentRunner] === mode={mode} size={size} run={run}/{runsPerCondition - 1} cond={condition} seed={seed} ===");
 
                     var result = new TrialResult
                     {
+                        mode = mode,
                         condition = condition,
                         agentCount = size,
                         runId = run,
                         seed = seed
                     };
                     yield return RunSingleTrial(
-                        condition, size, run, seed,
+                        mode, condition, size, run, seed,
                         summaryPath, performancePath, goalsPath, eventsPath,
                         result);
 
-                    var key = (size, condition);
+                    var key = (mode, size, condition);
                     if (!perGroup.ContainsKey(key)) perGroup[key] = new List<TrialResult>();
                     perGroup[key].Add(result);
 
                     yield return new WaitForSeconds(transitionDelay);
                 }
             }
+        }
         }
 
         currentRunIndex = -1;
@@ -203,6 +245,7 @@ public class ExperimentRunner : MonoBehaviour
     }
 
     private IEnumerator RunSingleTrial(
+        BenchmarkMode mode,
         AgentCondition condition, int configuredAgentCount, int runId, int seed,
         string summaryPath, string performancePath, string goalsPath, string eventsPath,
         TrialResult result)
@@ -225,13 +268,21 @@ public class ExperimentRunner : MonoBehaviour
         if (playerHealth != null) playerHealth.ResetHealth();
         if (automatedPlayer != null) automatedPlayer.enabled = true;
 
+        // Apply benchmark mode AFTER spawn (so the SetStressMode FindObjects sweep
+        // catches every flock manager just created) and BEFORE recording starts.
+        // In stress mode the player and all flocks are now invulnerable, so
+        // PlayerDeath / FlockWiped early-exits in the trial loop below cannot fire
+        // — stress trials always run to TimeLimit, giving a fixed 60s window of
+        // post-warmup data at constant live agent count.
+        conditionManager.SetStressMode(mode == BenchmarkMode.Stress);
+
         // Start recording BEFORE the settle delay so any stimuli that fire during
         // scene settling (FlockManager.SetTarget from aggro triggers, first
         // GoalChange from brains waking up) land inside the recording window.
         // Previously these were dropped because recording started after the delay,
         // breaking the reaction-time metric for most trials.
-        metricsCollector.StartRecording(runId, seed);
-        performanceProfiler.StartTrial(runId, seed);
+        metricsCollector.StartRecording(runId, seed, mode);
+        performanceProfiler.StartTrial(runId, seed, mode);
         performanceProfiler.ClearMetrics();
 
         // Belt-and-suspenders: the aggro trigger only fires OnTriggerEnter, which
@@ -239,6 +290,20 @@ public class ExperimentRunner : MonoBehaviour
         // spawn (no collision event). Force the stimulus explicitly so every
         // trial has a deterministic stimulus timestamp for reaction-time math.
         yield return null; // let Start() fire on spawned FlockManagers / GOAPBoidFlockManager
+
+        // Stimulus warmup gate (methodology-revisions-2026-04 item 5).
+        // Pre-fix, the stimulus fired ~1 frame after recording start, which let
+        // spawn-startup events (initial flock-state transitions, brain wake-up
+        // GoalChanges) contaminate the reaction-time metric — visible in the
+        // 2026-04-24 batch as bimodal distributions with σ > μ at small N (e.g.
+        // PureBOIDS-25 σ=3893ms on μ=2766ms). Delaying the stimulus past the
+        // spawn-startup window means the reaction clock starts after the agents
+        // have settled, so the metric measures actual response latency rather
+        // than spawn-induced noise. The warmup also matches the notebook's
+        // FPS/CPU trim window — one defensible warmup constant for the thesis.
+        if (stimulusWarmupSec > 0f)
+            yield return new WaitForSeconds(stimulusWarmupSec);
+
         ForceStimulusOnAllFlocks();
 
         // Now let the scene settle. Events during this window are still recorded.
@@ -278,11 +343,22 @@ public class ExperimentRunner : MonoBehaviour
         float entropy = metricsCollector.ComputeGoalEntropy();
         var perfAgg = performanceProfiler.ComputeTrialAggregates();
 
+        // Phase D — memory aggregates threaded through so §5.3 (Memory Allocation)
+        // has data without a separate collection pass. Combat-effectiveness metrics
+        // (item 2) read off the BehavioralMetricsCollector accumulators populated
+        // during the trial. DamagePerSecondToPlayer uses `elapsed` (the trial-loop
+        // duration, == DurationSec in the CSV) as its denominator so a reader
+        // computing TotalDamageToPlayer/DurationSec gets the same value.
+        float totalDmg = metricsCollector.TotalDamageToPlayer;
+        float dpsToPlayer = elapsed > 0f ? totalDmg / elapsed : 0f;
         metricsCollector.AppendTrialSummaryRow(
-            summaryPath, condition.ToString(), configuredAgentCount, runId, seed,
+            summaryPath, mode.ToString(), condition.ToString(), configuredAgentCount, runId, seed,
             outcome, elapsed,
             reactionMelee, reactionRanged, entropy,
-            perfAgg.avgFPS, perfAgg.avgCpuTimeMs, perfAgg.avgCpuTimeMsPerAgent, perfAgg.maxAgentCount);
+            perfAgg.avgFPS, perfAgg.avgCpuTimeMs, perfAgg.avgCpuTimeMsPerAgent, perfAgg.maxAgentCount,
+            perfAgg.avgGcMemoryMB, perfAgg.avgMonoUsedMB, perfAgg.avgTotalAllocatedMB,
+            totalDmg, dpsToPlayer,
+            metricsCollector.FirstHitMs, metricsCollector.AgentsKilledByPlayer);
 
         metricsCollector.ExportGoalDistribution(goalsPath);
         metricsCollector.ExportEventLog(eventsPath);
@@ -304,19 +380,21 @@ public class ExperimentRunner : MonoBehaviour
     }
 
     private void LogBatchSummary(
-        Dictionary<(int size, AgentCondition cond), List<TrialResult>> perGroup,
+        Dictionary<(BenchmarkMode mode, int size, AgentCondition cond), List<TrialResult>> perGroup,
         string summaryPath)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[ExperimentRunner] Batch complete.");
         sb.AppendLine($"Summary CSV: {summaryPath}");
         sb.AppendLine("");
-        sb.AppendLine("Size | Condition                  | trials | AvgFPS (μ±σ) | CPU ms/agent (μ±σ) | Entropy (μ±σ) | React melee ms (μ±σ)");
+        sb.AppendLine("Mode   | Size | Condition                  | trials | AvgFPS (μ±σ) | CPU ms/agent (μ±σ) | Entropy (μ±σ) | React melee ms (μ±σ)");
 
-        // Sort by (size, condition) so the table reads top-to-bottom in sweep order.
-        var keys = new List<(int size, AgentCondition cond)>(perGroup.Keys);
+        // Sort by (mode, size, condition) so the table reads top-to-bottom in sweep order.
+        var keys = new List<(BenchmarkMode mode, int size, AgentCondition cond)>(perGroup.Keys);
         keys.Sort((a, b) =>
         {
+            int byM = a.mode.CompareTo(b.mode);
+            if (byM != 0) return byM;
             int byS = a.size.CompareTo(b.size);
             return byS != 0 ? byS : a.cond.CompareTo(b.cond);
         });
@@ -329,7 +407,7 @@ public class ExperimentRunner : MonoBehaviour
             var cpu = MeanStd(results, r => r.avgCpuMsPerAgent);
             var ent = MeanStd(results, r => r.entropy);
             var rxn = MeanStd(results, r => r.reactionMelee < 0 ? 0f : r.reactionMelee);
-            sb.AppendLine($"{key.size,4} | {key.cond,-26} | {results.Count,6} | {fps.mean,6:F1}±{fps.std,5:F1} | {cpu.mean,7:F3}±{cpu.std,5:F3}     | {ent.mean,5:F2}±{ent.std,4:F2} | {rxn.mean,7:F1}±{rxn.std,5:F1}");
+            sb.AppendLine($"{key.mode,-6} | {key.size,4} | {key.cond,-26} | {results.Count,6} | {fps.mean,6:F1}±{fps.std,5:F1} | {cpu.mean,7:F3}±{cpu.std,5:F3}     | {ent.mean,5:F2}±{ent.std,4:F2} | {rxn.mean,7:F1}±{rxn.std,5:F1}");
         }
 
         Debug.Log(sb.ToString());
@@ -372,6 +450,7 @@ public class ExperimentRunner : MonoBehaviour
 
     private class TrialResult
     {
+        public BenchmarkMode mode;
         public AgentCondition condition;
         public int agentCount;
         public int runId;

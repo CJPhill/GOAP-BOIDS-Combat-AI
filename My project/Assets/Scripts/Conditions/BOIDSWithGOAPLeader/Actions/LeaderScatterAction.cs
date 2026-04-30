@@ -28,7 +28,9 @@ public class LeaderScatterAction : GoapActionBase<LeaderScatterAction.Data>
             ? data.Boid.manager.GetFlockCenter()
             : data.Boid.Position;
 
-        data.ScatterDirection = ScatterDirectionPicker.PickScatterDirection(data.Boid.Position, centroid);
+        data.ScatterDirection = ScatterDirectionPicker.PickScatterDirection(
+            data.Boid.Position, centroid, data.Boid.subgroupId, FlockManager.ScatterSubgroupCount);
+        // Reproducibility contract — see LeaderFleeAction.Start for details.
         data.ScatterTimer = Random.Range(4f, 6f);
 
         if (data.Brain != null)

@@ -28,7 +28,8 @@ public class GOAPBoidScatterAction : GoapActionBase<GOAPBoidScatterAction.Data>
         if (centroid == Vector3.zero)
             centroid = data.Agent.Position;
 
-        data.ScatterDirection = ScatterDirectionPicker.PickScatterDirection(data.Agent.Position, centroid);
+        data.ScatterDirection = ScatterDirectionPicker.PickScatterDirection(
+            data.Agent.Position, centroid, data.Agent.subgroupId, FlockManager.ScatterSubgroupCount);
         data.ScatterTimer = Random.Range(4f, 6f);
         data.Agent.isScattering = true;
     }

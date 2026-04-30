@@ -74,4 +74,57 @@ public class ScatterDirectionPickerTests
                 $"Iteration {i}: Direction should never be near-zero");
         }
     }
+
+    // ── Subgroup bucketing (Bug 5 fix) ──
+
+    [Test]
+    public void SubgroupScatter_SameBucket_DirectionsClose()
+    {
+        // 50 calls with the same subgroupId should all land within the bucket's
+        // ±15° jitter envelope of one another. Two members of the same subgroup
+        // should never differ by more than 30° of yaw.
+        Vector3 agentPos = new Vector3(10f, 0f, 0f);
+        Vector3 centroid = Vector3.zero;
+
+        Vector3 first = ScatterDirectionPicker.PickScatterDirection(agentPos, centroid, subgroupId: 1, subgroupCount: 3);
+        for (int i = 0; i < 50; i++)
+        {
+            Vector3 dir = ScatterDirectionPicker.PickScatterDirection(agentPos, centroid, subgroupId: 1, subgroupCount: 3);
+            float angle = Vector3.Angle(first, dir);
+            Assert.LessOrEqual(angle, 31f,
+                $"Iteration {i}: same-subgroup directions should be within 30° of each other (was {angle:F1}°)");
+        }
+    }
+
+    [Test]
+    public void SubgroupScatter_DifferentBuckets_Diverge()
+    {
+        // Buckets 0 and 2 in a 3-bucket partition are 120° apart in the angular
+        // domain. Their directions must therefore have a non-trivial angular gap.
+        Vector3 agentPos = new Vector3(10f, 0f, 0f);
+        Vector3 centroid = Vector3.zero;
+
+        for (int i = 0; i < 20; i++)
+        {
+            Vector3 a = ScatterDirectionPicker.PickScatterDirection(agentPos, centroid, subgroupId: 0, subgroupCount: 3);
+            Vector3 c = ScatterDirectionPicker.PickScatterDirection(agentPos, centroid, subgroupId: 2, subgroupCount: 3);
+            float angle = Vector3.Angle(a, c);
+            Assert.GreaterOrEqual(angle, 60f,
+                $"Iteration {i}: different-bucket directions should diverge by at least 60° (was {angle:F1}°)");
+        }
+    }
+
+    [Test]
+    public void SubgroupScatter_ClampsInvalidArgs()
+    {
+        // subgroupCount < 1 should be treated as a single bucket;
+        // subgroupId out of range should be clamped.
+        Vector3 dir1 = ScatterDirectionPicker.PickScatterDirection(Vector3.right * 10f, Vector3.zero, 0, 0);
+        Assert.AreEqual(1f, dir1.magnitude, 0.01f);
+        Assert.AreEqual(0f, dir1.y, 0.001f);
+
+        Vector3 dir2 = ScatterDirectionPicker.PickScatterDirection(Vector3.right * 10f, Vector3.zero, 99, 3);
+        Assert.AreEqual(1f, dir2.magnitude, 0.01f);
+        Assert.AreEqual(0f, dir2.y, 0.001f);
+    }
 }

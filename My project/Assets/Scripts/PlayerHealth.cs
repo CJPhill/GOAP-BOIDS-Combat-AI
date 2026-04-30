@@ -24,6 +24,14 @@ public class PlayerHealth : MonoBehaviour
     /// <summary>Set true by AutomatedPlayer during a dodge roll — blocks incoming damage.</summary>
     public bool IsInvincible { get; set; }
 
+    /// <summary>
+    /// Set true by ExperimentRunner during stress-mode trials. Blocks incoming damage for the
+    /// duration of the trial so the player never dies and the trial cannot terminate via
+    /// PlayerDeath. Decoupled from IsInvincible (which is dodge-driven) because the dodge
+    /// timer would otherwise toggle this off mid-trial.
+    /// </summary>
+    public bool IsInvulnerableMode { get; set; }
+
     private void Awake()
     {
         currentHealth = maxHealth;
@@ -31,12 +39,14 @@ public class PlayerHealth : MonoBehaviour
 
     public void TakeDamage(float amount)
     {
-        if (IsInvincible) return;
+        if (IsInvincible || IsInvulnerableMode) return;
 
         currentHealth = Mathf.Max(currentHealth - amount, 0f);
 
-        BehavioralMetricsCollector.Instance?.LogEvent(
-            "PlayerDamage", gameObject.name, -1, $"Amount={amount:F1},HP={currentHealth:F1}");
+        // RecordPlayerDamage updates the combat-effectiveness accumulators
+        // (TotalDamageToPlayer, FirstHitMs) AND emits the existing PlayerDamage
+        // event into the event log for analysis-script backward compat.
+        BehavioralMetricsCollector.Instance?.RecordPlayerDamage(amount, gameObject.name, currentHealth);
 
         if (currentHealth <= 0f)
             OnDeath();

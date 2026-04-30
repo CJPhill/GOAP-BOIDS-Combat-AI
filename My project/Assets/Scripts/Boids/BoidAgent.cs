@@ -8,6 +8,11 @@ public class BoidAgent : MonoBehaviour, IEnemy
     // Set by BoidGoapBrain.Awake(); null when GOAP package is not installed or component is absent.
     [HideInInspector] public BoidGoapBrain goapBrain;
 
+    // Subgroup bucket for Scatter (and any other behavior that wants stable
+    // subdivisions). Assigned at spawn time by FlockManager.SpawnFlock; the
+    // total bucket count is exposed by FlockManager.ScatterSubgroupCount.
+    [HideInInspector] public int subgroupId;
+
     private enum AttackState { Flocking, WindUp, InfinitySweep, Formation }
 
     // Public so GOAP actions can set velocity directly when they own movement.
@@ -25,6 +30,12 @@ public class BoidAgent : MonoBehaviour, IEnemy
     private float   infinitySweepTimer;
     private bool inFormation;
     private Vector3 formationTargetPos;
+
+    // Cached Scatter direction — picked once per entry into Scattering so the
+    // intra-subgroup jitter doesn't re-roll every frame (which would produce
+    // visible per-frame zig-zag).
+    private Vector3 cachedScatterDir;
+    private bool wasScatteringLastFrame;
 
     // IEnemy proxies to the flock — combat teammate calls these without knowing about flocks
     public bool IsDead => manager.IsDead;
@@ -76,6 +87,16 @@ public class BoidAgent : MonoBehaviour, IEnemy
                     acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight * cohesionMul;
                 }
             }
+            else if (!skipAlignmentCohesion
+                     && manager.LeaderBoid != null
+                     && this != manager.LeaderBoid
+                     && manager.LeaderBoid.gameObject != null)
+            {
+                // Stranded follower (zero in-perception neighbors). FlockManager has
+                // pre-filled cohesionCenter with the leader-redirect vector; apply it
+                // so the follower can recover instead of drifting away forever.
+                acceleration += SteerTowards(cohesionCenter) * settings.cohesionWeight * cohesionMul;
+            }
 
             // Cross-flock avoidance (independent of same-flock neighbors)
             acceleration += SteerTowards(crossFlockSeparation) * settings.crossFlockSeparationWeight;
@@ -83,13 +104,22 @@ public class BoidAgent : MonoBehaviour, IEnemy
             // Boundary steering
             acceleration += ComputeBoundarySteer();
 
-            // Scattering: each boid gets a random outward push from the flock centroid.
-            if (s == FlockManager.FlockState.Scattering)
+            // Scattering: each boid gets a subgroup-bucketed outward push from the flock
+            // centroid. Three subgroups → flock visibly splits into three dispersal lobes
+            // instead of every agent fanning out independently. Direction is cached on
+            // entry into Scattering to avoid per-frame jitter from the bucket randomness.
+            bool isScattering = s == FlockManager.FlockState.Scattering;
+            if (isScattering)
             {
-                Vector3 outward = cachedTransform.position - manager.GetFlockCenter();
-                if (outward.sqrMagnitude > 0.001f)
-                    acceleration += outward.normalized * settings.maxSteerForce;
+                if (!wasScatteringLastFrame)
+                {
+                    cachedScatterDir = ScatterDirectionPicker.PickScatterDirection(
+                        cachedTransform.position, manager.GetFlockCenter(),
+                        subgroupId, FlockManager.ScatterSubgroupCount);
+                }
+                acceleration += cachedScatterDir * settings.maxSteerForce;
             }
+            wasScatteringLastFrame = isScattering;
 
             // Target-seek — per-state behavior.
             if (manager.Target != null && settings.targetSeekWeight > 0f)

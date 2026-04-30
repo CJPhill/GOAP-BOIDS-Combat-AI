@@ -23,6 +23,9 @@ public class PerformanceProfiler : MonoBehaviour
     [SerializeField] private float averageFPS;
     [SerializeField] private int activeAgentCount;
     [SerializeField] private float cpuTimeMs;
+    [SerializeField] private float gcMemoryMB;          // managed heap currently in use
+    [SerializeField] private float monoUsedMB;          // Unity Mono runtime memory in use
+    [SerializeField] private float totalAllocatedMB;    // total Unity (native + managed) allocations
 
     private Queue<float> fpsHistory = new Queue<float>();
     private float fpsSum;
@@ -31,6 +34,7 @@ public class PerformanceProfiler : MonoBehaviour
     // Per-trial run tags (set by ExperimentRunner before the trial starts).
     private int currentRunId = 0;
     private int currentSeed = 0;
+    private string currentMode = "Combat";
 
     // Per-frame metrics for export
     private List<FrameMetrics> frameMetricsLog = new List<FrameMetrics>();
@@ -39,12 +43,16 @@ public class PerformanceProfiler : MonoBehaviour
 
     /// <summary>
     /// Tags subsequent frames with the given run/seed so batch-exported CSVs
-    /// are groupable by trial. Call before starting a trial.
+    /// are groupable by trial. Call before starting a trial. Backwards-compatible
+    /// overload defaults mode to Combat for callers that don't yet thread it through.
     /// </summary>
-    public void StartTrial(int runId, int seed)
+    public void StartTrial(int runId, int seed) => StartTrial(runId, seed, BenchmarkMode.Combat);
+
+    public void StartTrial(int runId, int seed, BenchmarkMode mode)
     {
         currentRunId = runId;
         currentSeed = seed;
+        currentMode = mode.ToString();
     }
 
     private void Start()
@@ -93,12 +101,27 @@ public class PerformanceProfiler : MonoBehaviour
         // CPU time (approximation via Time.deltaTime)
         cpuTimeMs = Time.deltaTime * 1000f;
 
+        // Memory snapshots (Phase D — for §5.3 Memory Allocation in the thesis).
+        // GetTotalMemory(false) reports the managed heap without forcing a GC, so it
+        // reflects steady-state managed-side pressure rather than post-collection low.
+        // Profiler.GetMonoUsedSizeLong / GetTotalAllocatedMemoryLong report Unity's
+        // own memory accounting (Mono managed + total native+managed). All three are
+        // O(1) counter reads — safe to call every frame.
+        long gcBytes    = System.GC.GetTotalMemory(forceFullCollection: false);
+        long monoBytes  = Profiler.GetMonoUsedSizeLong();
+        long totalBytes = Profiler.GetTotalAllocatedMemoryLong();
+        const float BYTES_PER_MB = 1024f * 1024f;
+        gcMemoryMB       = gcBytes    / BYTES_PER_MB;
+        monoUsedMB       = monoBytes  / BYTES_PER_MB;
+        totalAllocatedMB = totalBytes / BYTES_PER_MB;
+
         // Log frame data
         float cpuMsPerAgent = activeAgentCount > 0 ? cpuTimeMs / activeAgentCount : 0f;
         frameMetricsLog.Add(new FrameMetrics
         {
             frameNumber = Time.frameCount,
             time = Time.time,
+            mode = currentMode,
             condition = conditionManager != null ? conditionManager.CurrentCondition.ToString() : "Unknown",
             runId = currentRunId,
             seed = currentSeed,
@@ -106,7 +129,10 @@ public class PerformanceProfiler : MonoBehaviour
             averageFPS = averageFPS,
             agentCount = activeAgentCount,
             cpuTimeMs = cpuTimeMs,
-            cpuTimeMsPerAgent = cpuMsPerAgent
+            cpuTimeMsPerAgent = cpuMsPerAgent,
+            gcMemoryMB       = gcMemoryMB,
+            monoUsedMB       = monoUsedMB,
+            totalAllocatedMB = totalAllocatedMB,
         });
 
         if (enableDetailedProfiling)
@@ -146,13 +172,14 @@ public class PerformanceProfiler : MonoBehaviour
         bool fileExists = System.IO.File.Exists(filepath);
         System.Text.StringBuilder csv = new System.Text.StringBuilder();
         if (!fileExists)
-            csv.AppendLine("Frame,Time,Condition,RunId,Seed,FPS,AvgFPS,AgentCount,CPUTimeMs,CPUTimeMsPerAgent");
+            csv.AppendLine("Frame,Time,BenchmarkMode,Condition,RunId,Seed,FPS,AvgFPS,AgentCount,CPUTimeMs,CPUTimeMsPerAgent,GcMemoryMB,MonoUsedMB,TotalAllocatedMB");
 
         foreach (var frame in frameMetricsLog)
         {
             csv.AppendLine(
-                $"{frame.frameNumber},{frame.time:F3},{frame.condition},{frame.runId},{frame.seed}," +
-                $"{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3},{frame.cpuTimeMsPerAgent:F4}");
+                $"{frame.frameNumber},{frame.time:F3},{frame.mode},{frame.condition},{frame.runId},{frame.seed}," +
+                $"{frame.fps:F2},{frame.averageFPS:F2},{frame.agentCount},{frame.cpuTimeMs:F3},{frame.cpuTimeMsPerAgent:F4}," +
+                $"{frame.gcMemoryMB:F2},{frame.monoUsedMB:F2},{frame.totalAllocatedMB:F2}");
         }
 
         try
@@ -203,6 +230,7 @@ public class PerformanceProfiler : MonoBehaviour
     {
         public int frameNumber;
         public float time;
+        public string mode;
         public string condition;
         public int runId;
         public int seed;
@@ -211,6 +239,9 @@ public class PerformanceProfiler : MonoBehaviour
         public int agentCount;
         public float cpuTimeMs;
         public float cpuTimeMsPerAgent;
+        public float gcMemoryMB;
+        public float monoUsedMB;
+        public float totalAllocatedMB;
     }
 
     public struct TrialAggregates
@@ -219,6 +250,9 @@ public class PerformanceProfiler : MonoBehaviour
         public float avgCpuTimeMs;
         public float avgCpuTimeMsPerAgent;
         public int maxAgentCount;
+        public float avgGcMemoryMB;
+        public float avgMonoUsedMB;
+        public float avgTotalAllocatedMB;
     }
 
     /// <summary>
@@ -231,12 +265,16 @@ public class PerformanceProfiler : MonoBehaviour
         if (frameMetricsLog.Count == 0) return agg;
 
         double sumFps = 0, sumCpu = 0, sumCpuPerAgent = 0;
+        double sumGc = 0, sumMono = 0, sumTotal = 0;
         int maxAgents = 0;
         foreach (var f in frameMetricsLog)
         {
             sumFps += f.fps;
             sumCpu += f.cpuTimeMs;
             sumCpuPerAgent += f.cpuTimeMsPerAgent;
+            sumGc += f.gcMemoryMB;
+            sumMono += f.monoUsedMB;
+            sumTotal += f.totalAllocatedMB;
             if (f.agentCount > maxAgents) maxAgents = f.agentCount;
         }
         int n = frameMetricsLog.Count;
@@ -244,14 +282,18 @@ public class PerformanceProfiler : MonoBehaviour
         agg.avgCpuTimeMs = (float)(sumCpu / n);
         agg.avgCpuTimeMsPerAgent = (float)(sumCpuPerAgent / n);
         agg.maxAgentCount = maxAgents;
+        agg.avgGcMemoryMB = (float)(sumGc / n);
+        agg.avgMonoUsedMB = (float)(sumMono / n);
+        agg.avgTotalAllocatedMB = (float)(sumTotal / n);
         return agg;
     }
 
     #if UNITY_EDITOR
-    [ContextMenu("Export Metrics to Desktop")]
+    [ContextMenu("Export Metrics")]
     private void EditorExportMetrics()
     {
-        string desktop = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+        string desktop = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", "ExperimentResults"));
+        System.IO.Directory.CreateDirectory(desktop);
         string filename = $"PerformanceMetrics_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv";
         string filepath = System.IO.Path.Combine(desktop, filename);
         ExportMetrics(filepath);

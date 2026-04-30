@@ -2,9 +2,10 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// Tests for the leader leash formula added to LeaderGoapBrain.Update().
-/// When isMovementOverridden=true and the leader drifts beyond maxLeaderSeparation
-/// from the flock centroid, its velocity is scaled down so followers can catch up.
+/// Tests for the leader leash formula in LeaderGoapBrain.Update().
+/// When the leader drifts beyond maxLeaderSeparation from the flock centroid,
+/// its velocity is scaled down so followers can catch up. Applied unconditionally
+/// (no longer gated on isMovementOverridden — see Bug 4 fix).
 /// </summary>
 [TestFixture]
 public class LeaderLeashTests

@@ -85,6 +85,13 @@ public class GOAPBoidFlockManager : MonoBehaviour
     public int BoidCount => agents.Count;
     public float HealthPercent => maxFlockHealth > 0f ? currentFlockHealth / maxFlockHealth : 0f;
     public bool IsDead => currentFlockHealth <= 0f;
+
+    /// <summary>
+    /// Set true by ExperimentRunner during stress-mode trials. Suppresses incoming damage so
+    /// pooled HP never drains and live agent count stays at configured N for the full trial.
+    /// See [[methodology-revisions-2026-04]] item 1 for context.
+    /// </summary>
+    public bool SuspendDamage { get; set; }
     public Vector3 Centroid => cachedCentroid;
     public float LeashRadius => leashRadius;
     public float LeashStrength => leashStrength;
@@ -108,6 +115,7 @@ public class GOAPBoidFlockManager : MonoBehaviour
     public void RegisterAgent(GOAPBoidAgent agent)
     {
         if (agent == null || agents.Contains(agent)) return;
+        agent.subgroupId = agents.Count % FlockManager.ScatterSubgroupCount;
         agents.Add(agent);
         agent.flockManager = this;
         // Fallback: if Configure wasn't called (e.g. test harness), keep flock size in sync.
@@ -145,6 +153,7 @@ public class GOAPBoidFlockManager : MonoBehaviour
 
     public void TakeDamage(float amount)
     {
+        if (SuspendDamage) return;
         if (IsDead) return;
         currentFlockHealth = Mathf.Max(currentFlockHealth - amount, 0f);
         if (IsDead)
@@ -169,6 +178,9 @@ public class GOAPBoidFlockManager : MonoBehaviour
             rangedParticipants.Remove(dying);
             if (dying != null)
                 Destroy(dying.gameObject);
+            // Player is the only damage source in a trial, so each cull is a kill
+            // attributable to the player. Logged for AgentsKilledByPlayer trial metric.
+            BehavioralMetricsCollector.Instance?.RecordAgentDeath();
         }
 
         if (rangedPhase == RangedAttackPhase.Forming || rangedPhase == RangedAttackPhase.Locked)

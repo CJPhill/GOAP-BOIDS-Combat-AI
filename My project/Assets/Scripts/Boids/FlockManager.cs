@@ -79,6 +79,12 @@ public class FlockManager : MonoBehaviour
     public BoidAgent LeaderBoid => leaderBoid;
     public void SetLeader(BoidAgent leader) { leaderBoid = leader; }
 
+    // Number of scatter subgroups. Each boid is assigned a subgroupId in [0, count)
+    // at spawn time (see SpawnFlock / AddBoids); ScatterDirectionPicker uses these
+    // buckets so the flock disperses in a few coherent directions instead of every
+    // boid picking independently.
+    public const int ScatterSubgroupCount = 3;
+
     public bool IsDead => currentFlockHealth <= 0f;
     /// <summary>Max HP, honoring the ConditionManager override when set.</summary>
     public float EffectiveMaxHealth => maxHealthOverride > 0f
@@ -86,8 +92,17 @@ public class FlockManager : MonoBehaviour
         : (settings != null ? settings.maxHealth : 0f);
     public float HealthPercent => EffectiveMaxHealth > 0f ? currentFlockHealth / EffectiveMaxHealth : 0f;
 
+    /// <summary>
+    /// Set true by ExperimentRunner during stress-mode trials. Suppresses incoming damage so
+    /// the flock pooled HP never drains and SyncBoidCountToHealth never culls agents — the
+    /// live agent count stays at the configured N for the full trial, giving the FPS
+    /// benchmark a fixed compute load to compare across conditions.
+    /// </summary>
+    public bool SuspendDamage { get; set; }
+
     public void TakeDamage(float amount)
     {
+        if (SuspendDamage) return;
         if (IsDead) return;
         currentFlockHealth = Mathf.Max(currentFlockHealth - amount, 0f);
         if (IsDead)
@@ -113,6 +128,9 @@ public class FlockManager : MonoBehaviour
             BoidAgent dying = boids[last];
             boids.RemoveAt(last);
             Destroy(dying.gameObject);
+            // Player is the only damage source in a trial, so each cull is a kill
+            // attributable to the player. Logged for AgentsKilledByPlayer trial metric.
+            BehavioralMetricsCollector.Instance?.RecordAgentDeath();
         }
 
         // Cancel melee attack if too few boids remain
@@ -285,6 +303,9 @@ public class FlockManager : MonoBehaviour
     {
         if (boidPrefab != null && settings != null)
         {
+            if (settings.obstacleMask == 0)
+                Debug.LogWarning($"BoidSettings '{settings.name}' has obstacleMask=0; obstacle avoidance disabled — boids will phase through geometry.");
+
             SpawnFlock();
             originalFlockSize = boids.Count;
             // Honour HP override before falling back to settings.maxHealth.
@@ -405,6 +426,10 @@ public class FlockManager : MonoBehaviour
         bool rangedActive = rangedPhase != RangedAttackPhase.None && rangedPhase != RangedAttackPhase.Recovering;
         bool meleeActive = meleePhase != MeleeAttackPhase.None && meleePhase != MeleeAttackPhase.Recovering;
         bool slotsSaturated = currentAttackerCount >= settings.maxSimultaneousAttackers;
+        // Mirror of GOAP's !cooldownReady: the flock wave/volley is on its post-attack
+        // cooldown and cannot engage. Feeding this into the Flanking rule closes the
+        // parity gap with GoalPriorityResolver (Conditions 3/4).
+        bool flockCooldownActive = flockMeleeCooldownTimer > 0f || flockAttackCooldownTimer > 0f;
 
         var behavior = FlockStateResolver.Resolve(
             healthPercent: HealthPercent,
@@ -423,7 +448,8 @@ public class FlockManager : MonoBehaviour
             kiteMinDistance: settings.kiteMinDistance,
             isolationThreshold: settings.isolationThreshold,
             guardInnerRange: settings.guardInnerRange,
-            guardOuterRange: settings.guardOuterRange);
+            guardOuterRange: settings.guardOuterRange,
+            flockCooldownActive: flockCooldownActive);
 
         // FlockBehavior and FlockState are declared in the same order so a cast is safe.
         FlockState newState = (FlockState)(int)behavior;
@@ -485,6 +511,7 @@ public class FlockManager : MonoBehaviour
             BoidAgent agent = boidObj.GetComponent<BoidAgent>();
             agent.settings = settings;
             agent.manager = this;
+            agent.subgroupId = i % ScatterSubgroupCount;
             agent.Initialize(startVelocity);
             ApplyFlockColor(agent);
 
@@ -505,12 +532,14 @@ public class FlockManager : MonoBehaviour
 
     public void AddBoids(List<BoidAgent> incoming)
     {
+        int baseIndex = boids.Count;
         for (int i = 0; i < incoming.Count; i++)
         {
             BoidAgent boid = incoming[i];
             boid.transform.SetParent(transform);
             boid.settings = settings;
             boid.manager = this;
+            boid.subgroupId = (baseIndex + i) % ScatterSubgroupCount;
             ApplyFlockColor(boid);
             boids.Add(boid);
         }
@@ -600,15 +629,22 @@ public class FlockManager : MonoBehaviour
                 }
             }
 
+            // Leader redirect runs unconditionally so a stranded follower (zero neighbors
+            // because it drifted past perceptionRadius) still feels the pull toward the
+            // leader and can recover. Alignment stays gated by neighborCount.
+            bool hasLeader = leaderBoid != null && boid != leaderBoid && leaderBoid.gameObject != null;
             if (neighborCount > 0)
             {
                 alignmentHeading /= neighborCount;
 
-                // Leader redirect: followers cohese toward leader instead of average neighbor
-                if (leaderBoid != null && boid != leaderBoid && leaderBoid.gameObject != null)
+                if (hasLeader)
                     cohesionCenter = leaderBoid.Position - boid.Position;
                 else
                     cohesionCenter = (cohesionCenter / neighborCount) - boid.Position;
+            }
+            else if (hasLeader)
+            {
+                cohesionCenter = leaderBoid.Position - boid.Position;
             }
 
             // Cross-flock separation (separation only, no alignment/cohesion)
@@ -657,7 +693,7 @@ public class FlockManager : MonoBehaviour
             {
                 // Recompute slots each frame so ring stays at flock anchor
                 ComputeFormationSlots(0f);
-                UpdateBoidFormationTargets();
+                AssignFormationToBoids();
 
                 // Check convergence
                 int onSlot = 0;
@@ -685,7 +721,7 @@ public class FlockManager : MonoBehaviour
             {
                 formationOrbitAngle += settings.formationOrbitSpeed * Time.deltaTime;
                 ComputeFormationSlots(formationOrbitAngle);
-                UpdateBoidFormationTargets();
+                AssignFormationToBoids();
 
                 rangedPhaseTimer -= Time.deltaTime;
                 if (rangedPhaseTimer <= 0f)
@@ -765,16 +801,6 @@ public class FlockManager : MonoBehaviour
     }
 
     private void AssignFormationToBoids()
-    {
-        if (formationSlots == null) return;
-        for (int i = 0; i < boids.Count; i++)
-        {
-            int slotIndex = i % formationSlots.Length;
-            boids[i].SetFormationTarget(formationSlots[slotIndex], true);
-        }
-    }
-
-    private void UpdateBoidFormationTargets()
     {
         if (formationSlots == null) return;
         for (int i = 0; i < boids.Count; i++)
