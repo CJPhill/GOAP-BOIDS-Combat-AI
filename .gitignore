@@ -76,3 +76,6 @@ analysis/.venv/
 analysis/figures/
 analysis/**/__pycache__/
 analysis/**/.ipynb_checkpoints/
+
+# Claude Code worktrees (transient, must not be committed as gitlinks)
+.claude/worktrees/
