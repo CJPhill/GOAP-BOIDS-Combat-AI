@@ -1,5 +1,7 @@
 # AI Game Demo — Workstation Handoff
-**Last updated:** 2026-04-23 | **Branch:** main
+**Last updated:** 2026-05-04 | **Branch:** main
+
+> **For canonical implementation state**, see [`wiki/thesis-implementation-status.md`](../wiki/thesis-implementation-status.md) in the parent Thesis-Brain repo. This file is for the most recent workstation handoff; the wiki page is the living source of truth for the project as a whole.
 
 ---
 
@@ -125,27 +127,99 @@ PureBOIDS-flavoured glue for `GOAPWithBOIDSMovement`, additive to the per-agent 
 
 ---
 
-## Current batch defaults
+## Recent updates (2026-05-04 session)
 
-`ExperimentRunner` (Inspector):
-- `Experiment Duration`: 60s max per trial
-- `Runs Per Condition`: 10
-- `Base Seed`: 42
-- `Transition Delay`: 2s
-- `Conditions To Test`: `[PureBOIDS, BOIDSWithGOAPLeader, GOAPWithBOIDSMovement]`
-- `Agent Counts To Test`: `[100]` (set to e.g. `[50, 100, 200]` for scaling sweep)
-- `Comparison HP Per Flock`: 3000
+### Combat-mode trial duration tuning
+The 2026-04-25 follower-mimic-leader fix made BOIDSWithGOAPLeader followers cluster tightly around the leader at melee range, where AOE chewed through the pooled HP super-linearly with cluster density. Trials wiped in ~10 s at N=200. Fix: AutomatedPlayer attacks now cap targets per swing (Light=3, Heavy=6, AOE=8 closest) modelling physical swing reach, plus AOE damage 11 → 9. Drain rate is now N-independent. Verified live: N=200 Leader runs 60 s with 109/200 alive; N=800 Leader runs 60 s with 407/800 alive.
 
-`AutomatedPlayer` ability damage (halved from original for longer observation):
-- Light 7 · Heavy 22 · AOE Burst 11 (range 5u) · Ranged Throw 10
+### 20-agent floor mystery resolved
+The 2026-04-26 batch's flat-20-across-N artifact was an `ApplyComparisonOverrides` race already fixed in the 2026-04-25 round; today's diagnostic confirms `originalFlockSize` correctly scales with configured N. See [`wiki/methodology-revisions-2026-04.md`](../wiki/methodology-revisions-2026-04.md) Item 3a result for the full write-up.
+
+### `ConditionManager.OnValidate` clamp removed
+The Inspector field `agentCount` was silently clamped to ≤ 100. Now floors at 1, no upper limit. Direct edits to 800 etc. now stick. Note: the runner's `agentCountsToTest` array drives batch sizes; `ConditionManager.agentCount` is only used by the "Spawn Agents for Current Condition" context menu.
+
+### Diagnostic instrumentation (off by default)
+`FlockManager.DiagnosticLogging` (static bool) + `Thesis → Toggle Floor Diagnostic` Editor menu. When enabled, logs spawn sizes, every targetCount change, and KillAllBoids triggers. Useful for future HP/cull investigations.
+
+### `ExperimentRunner` sweep echo
+First console line on batch start now prints the resolved sweep config (`modes/sizes/conditions/runsPerCondition`) so a stale Inspector value or wrong-field edit is obvious from the first line of output.
 
 ---
 
-## Still TODO
-- **Analysis notebook** (Python/Jupyter) reading the 4 batch CSVs → mean-metric bar chart, entropy box plot, reaction-time histogram, scaling curves. ~50 lines of pandas+matplotlib.
-- **Scaling sweep at larger counts** (`[100, 200, 400, 800]`) to find where FPS diverges between architectures — currently no differentiation at ~100.
-- **Per-system CPU breakdown** via existing `Profiler.BeginSample` markers (BOIDS forces vs GOAP planning vs physics). Infrastructure exists; aggregation script needed.
+## Final-batch preflight checklist (desktop, ~10 minutes before launch)
+
+Run this list before kicking off the overnight 1,080-trial batch. The methodology is committed; the only thing left is making the Inspector match.
+
+### 1. Pull the latest code
+```powershell
+cd <Thesis-Brain root>
+git pull
+git submodule update --init --recursive
+```
+
+Verify `git log -1 --oneline` inside `AI_Game_demo` shows the latest 2026-05-04 commits (AOE hit caps, diagnostic instrumentation, OnValidate fix).
+
+### 2. Open the project in Unity 6000.3.8f1
+Open scene **`Assets/Scenes/New Scene.unity`**. Confirm no compile errors in the console.
+
+### 3. Set Inspector fields on the **`ExperimentRunner`** component
+
+| Field | Final-batch value |
+|---|---|
+| `Experiment Duration` | `60` |
+| `Stimulus Warmup Sec` | `5` |
+| `Runs Per Condition` | `30` |
+| `Base Seed` | `42` |
+| `Transition Delay` | `0.5` |
+| `Conditions To Test` | `[PureBOIDS, BOIDSWithGOAPLeader, GOAPWithBOIDSMovement]` (size 3) |
+| `Agent Counts To Test` | `[25, 50, 100, 200, 400, 800]` (size 6) |
+| `Modes To Test` | `[Stress, Combat]` (size 2) |
+
+Total trials: 6 sizes × 3 conditions × 30 runs × 2 modes = **1,080**. Estimate: ~18 h overnight at 60 s/trial average.
+
+**Do NOT edit the `agentCount` field on `ConditionManager` — it is only consulted by the "Spawn Agents for Current Condition" context menu, not by the batch.**
+
+### 4. Set `obstacleMask` on three assets (currently warns on every spawn)
+- `Assets/MeleeBoidSettings.asset` — set `obstacleMask` to the environment-collider layer.
+- `Assets/RangedBoidSettings.asset` — same.
+- The `GOAPBoidAgent` prefab — its `obstacleMask` field on the `GOAPBoidAgent` component, same layer.
+
+Console warning: `BoidSettings 'X' has obstacleMask=0; obstacle avoidance disabled — boids will phase through geometry.` Fixing this lets boids respect environment colliders, which matters for spatial dynamics in the larger flocks.
+
+### 5. **Save the scene (Ctrl+S).**
+Inspector edits aren't persisted into `New Scene.unity` until you save. The `Thesis → Run Batch Experiment` menu reopens the scene from disk if needed, so unsaved edits would be lost.
+
+### 6. Run EditMode tests as a sanity check
+**Window → General → Test Runner → EditMode tab → Run All.** ~1 s total. All should pass; today's changes were additive. If `BoidSettingsAssetTests` fails on `AllBoidSettingsAssets_HaveNonZeroObstacleMask`, you missed step 4.
+
+### 7. Run the smoke test
+Either:
+- **PlayMode test runner**: run `BatchRunnerSmokeTest` (5 s).
+- **Manual mini-batch**: temporarily set `Agent Counts To Test = [100]`, `Runs Per Condition = 1`, run via menu. Verify all four CSVs land in `ExperimentResults/` with the `BenchmarkMode` column populated and the four combat metrics (`TotalDamageToPlayer`, `DamagePerSecondToPlayer`, `FirstHitMs`, `AgentsKilledByPlayer`) present and non-empty.
+- **Restore the final-batch values from step 3 afterwards.**
+
+### 8. Verify Stress mode actually suppresses damage
+In a single Stress-mode trial, `AgentsKilledByPlayer` should be **0** and `TotalDamageToPlayer` should be **0** (the invulnerability gates suppress all damage). If non-zero, the `ConditionManager.SetStressMode` toggle didn't propagate to a flock manager — file a bug before the batch.
+
+### 9. Launch the final batch
+**Thesis → Run Batch Experiment** from the menu. Watch the first console line — should read something like:
+
+```
+[ExperimentRunner] Sweep: modes=[Stress,Combat] sizes=[25,50,100,200,400,800] conditions=[PureBOIDS,BOIDSWithGOAPLeader,GOAPWithBOIDSMovement] runsPerCondition=30
+```
+
+If `sizes` or `modes` doesn't match the table in step 3, you forgot to save the scene or edited the wrong field. Stop the batch (Thesis → Stop Batch) and re-check.
+
+Walk away. CSVs land in `My project/ExperimentResults/`. The summary line will print to console when done.
+
+---
+
+## Deferred (post-batch / future work)
+- **Per-system CPU breakdown** — `Profiler.BeginSample` markers are in place; aggregation script over `Performance_batch_*.csv` not yet written.
 - **Auto-screenshot at key events** (first scatter, first regroup) for thesis figures.
+- **Per-flock live-count breakdown** in the CSV (currently aggregated across both flocks).
+- **Multi-swarm benchmark dimension** — sweep `swarmsPerType ∈ {1, 2, 4}` at fixed N. Tracked in `wiki/todos.md` Someday section. Earliest realistic window: post-2026-05-09.
+- **Perception-radius centralization** — `playerDetectionRange = 30 m` in GOAP brains vs `15 m` aggro in `FlockManager`. Probably immaterial at the configured Ns; document as a parity caveat in the thesis methodology chapter.
 
 ---
 
