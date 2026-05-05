@@ -124,10 +124,26 @@ public class ConditionManager : MonoBehaviour
     /// </summary>
     public void SetStressMode(bool stress)
     {
-        if (playerTransform != null)
+        // Tag fallback when playerTransform Inspector slot is unwired — the 2026-05-04
+        // pilot caught this as 18/18 GOAPWithBOIDSMovement stress trials ending in
+        // PlayerDeath because the silent-skip on a null Inspector ref left the player
+        // vulnerable. Hard error if both paths fail; a contaminated batch is worse than
+        // a noisy log.
+        var ph = playerTransform != null ? playerTransform.GetComponent<PlayerHealth>() : null;
+        if (ph == null)
         {
-            var ph = playerTransform.GetComponent<PlayerHealth>();
-            if (ph != null) ph.IsInvulnerableMode = stress;
+            var playerGO = GameObject.FindGameObjectWithTag("Player");
+            if (playerGO != null) ph = playerGO.GetComponent<PlayerHealth>();
+        }
+        if (ph != null)
+        {
+            ph.IsInvulnerableMode = stress;
+        }
+        else
+        {
+            Debug.LogError("[ConditionManager] SetStressMode: PlayerHealth not found via " +
+                           "playerTransform or 'Player' tag. Stress-mode invulnerability " +
+                           "NOT applied — trials will be contaminated.");
         }
 
         foreach (var fm in FindObjectsByType<FlockManager>(FindObjectsSortMode.None))

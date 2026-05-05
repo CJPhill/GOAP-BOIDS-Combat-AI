@@ -27,7 +27,7 @@ MonoBehaviour:
   obstacleAvoidanceRadius: 1.5
   obstacleMask:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 64
   boundaryRadius: 15
   boundaryTurnStrength: 5
   flockSize: 50
@@ -46,6 +46,11 @@ MonoBehaviour:
   attackDamage: 10
   attackCooldown: 1.5
   minSurvivorFraction: 0.35
+  fleeHealthThreshold: 0.3
+  fleeSpeedMultiplier: 1.3
+  scatterDuration: 3
+  regroupCohesionMultiplier: 3
+  flankAngleDegrees: 60
   flockAttackTriggerDistance: 12
   formationRingRadius: 5
   formationDuration: 2
@@ -72,3 +77,11 @@ MonoBehaviour:
   meleeRecoveryDuration: 0.5
   meleeWindUpSteerWeight: 5
   meleeChargeSteerWeight: 10
+  isolationThreshold: 20
+  regroupRadius: 8
+  criticalHealthThreshold: 0.15
+  scatterSpeedMultiplier: 1.5
+  kiteMinDistance: 8
+  kiteMaxDistance: 15
+  guardInnerRange: 15
+  guardOuterRange: 30

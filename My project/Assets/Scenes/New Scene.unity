@@ -1606,7 +1606,7 @@ MonoBehaviour:
   comparisonHPPerFlock: 5000
   spawnedAgents: []
   goapBehaviour: {fileID: 2035265743}
-  playerTransform: {fileID: 0}
+  playerTransform: {fileID: 49173742}
 --- !u!4 &2147090432
 Transform:
   m_ObjectHideFlags: 0
@@ -1635,13 +1635,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
-  runsPerCondition: 1
+  runsPerCondition: 20
   baseSeed: 42
   transitionDelay: 0.5
   stimulusWarmupSec: 5
-  conditionsToTest: 02000000
-  agentCountsToTest: 20030000
-  modesToTest: 00000000
+  conditionsToTest: 010000000300000002000000
+  agentCountsToTest: 3200000064000000c80000009001000020030000
+  modesToTest: 0100000000000000
   outputDirectory: 
   isRunning: 0
   currentRunIndex: -1

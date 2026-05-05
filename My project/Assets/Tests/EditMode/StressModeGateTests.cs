@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 /// <summary>
 /// EditMode tests for the stress-mode invulnerability gates added in
@@ -83,5 +84,68 @@ public class StressModeGateTests
         Assert.IsTrue(ph.IsInvulnerableMode, "Stress flag must survive dodge clear.");
         ph.TakeDamage(50f);
         Assert.AreEqual(100f, ph.CurrentHealth, 1e-4f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ConditionManager.SetStressMode propagation regression tests
+    //
+    // The 2026-05-04 pilot batch caught a silent-skip bug: ConditionManager's
+    // playerTransform Inspector slot was unwired ({fileID: 0} in the scene),
+    // so SetStressMode early-returned without touching PlayerHealth. Result:
+    // 18/18 GOAPWithBOIDSMovement stress trials ended in PlayerDeath because
+    // the player stayed vulnerable. Fixed by adding a tag-based fallback plus
+    // a hard error when both lookup paths fail. These tests cover that
+    // propagation pathway specifically.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void SetStressMode_PlayerTransformNull_FallsBackToTagAndSetsFlag()
+    {
+        playerGO.tag = "Player";
+        var cmGO = new GameObject("TestConditionManager");
+        var cm = cmGO.AddComponent<ConditionManager>();
+        Assert.IsNull(cm.playerTransform, "Precondition: playerTransform should be null (Inspector unwired).");
+
+        cm.SetStressMode(true);
+        Assert.IsTrue(ph.IsInvulnerableMode, "Tag fallback must propagate stress flag when Inspector ref is null.");
+
+        cm.SetStressMode(false);
+        Assert.IsFalse(ph.IsInvulnerableMode, "SetStressMode(false) must clear the flag through the same fallback path.");
+
+        Object.DestroyImmediate(cmGO);
+    }
+
+    [Test]
+    public void SetStressMode_PlayerTransformAssigned_SetsFlag()
+    {
+        var cmGO = new GameObject("TestConditionManager");
+        var cm = cmGO.AddComponent<ConditionManager>();
+        cm.playerTransform = playerGO.transform;
+
+        cm.SetStressMode(true);
+        Assert.IsTrue(ph.IsInvulnerableMode, "Inspector-assigned playerTransform must propagate stress flag.");
+
+        cm.SetStressMode(false);
+        Assert.IsFalse(ph.IsInvulnerableMode);
+
+        Object.DestroyImmediate(cmGO);
+    }
+
+    [Test]
+    public void SetStressMode_NoPlayerAtAll_LogsErrorAndDoesNotThrow()
+    {
+        // Player is on the "Untagged" tag and ConditionManager has no Inspector ref.
+        // The fix logs a hard error rather than silently skipping — that error
+        // is the load-bearing diagnostic, so the test asserts it fires.
+        playerGO.tag = "Untagged";
+        var cmGO = new GameObject("TestConditionManager");
+        var cm = cmGO.AddComponent<ConditionManager>();
+
+        LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(
+            "SetStressMode: PlayerHealth not found"));
+        Assert.DoesNotThrow(() => cm.SetStressMode(true));
+        Assert.IsFalse(ph.IsInvulnerableMode, "No player resolvable → flag must not be set.");
+
+        Object.DestroyImmediate(cmGO);
     }
 }

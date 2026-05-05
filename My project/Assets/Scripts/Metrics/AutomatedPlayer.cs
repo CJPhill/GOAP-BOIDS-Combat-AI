@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
+using Object = UnityEngine.Object;
 
 /// <summary>
 /// Automated player controller simulating a hack-and-slash playstyle for thesis experiments.
