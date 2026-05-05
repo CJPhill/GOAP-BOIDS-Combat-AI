@@ -25,6 +25,7 @@ public class LeaderFleeAction : GoapActionBase<LeaderFleeAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderFleeAction), data.Boid);
         if (data.Target != null)
             data.FleeDirection = (data.Boid.Position - data.Target.Position).normalized;
         else

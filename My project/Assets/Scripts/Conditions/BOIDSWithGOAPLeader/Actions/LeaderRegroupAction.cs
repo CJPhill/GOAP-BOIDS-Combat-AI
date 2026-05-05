@@ -22,6 +22,7 @@ public class LeaderRegroupAction : GoapActionBase<LeaderRegroupAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderRegroupAction), data.Boid);
         data.RegroupTimer = 8f;
         if (data.Brain != null)
         {

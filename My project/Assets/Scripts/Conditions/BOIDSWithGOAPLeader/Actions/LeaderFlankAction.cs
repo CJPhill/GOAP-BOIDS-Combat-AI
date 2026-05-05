@@ -26,6 +26,7 @@ public class LeaderFlankAction : GoapActionBase<LeaderFlankAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderFlankAction), data.Boid);
         data.FlankTimer = 6f;
 
         if (data.Target != null && data.Boid.manager != null)

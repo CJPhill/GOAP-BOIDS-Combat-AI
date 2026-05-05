@@ -25,6 +25,7 @@ public class LeaderWanderAction : GoapActionBase<LeaderWanderAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderWanderAction), data.Boid);
         data.Timer = MaxTime;
         if (data.Brain != null)
         {

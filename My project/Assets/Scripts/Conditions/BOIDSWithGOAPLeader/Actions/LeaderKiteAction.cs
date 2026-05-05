@@ -32,6 +32,7 @@ public class LeaderKiteAction : GoapActionBase<LeaderKiteAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderKiteAction), data.Boid);
         data.CurrentPhase = Phase.Retreat;
         data.KiteTimer = 8f;
 

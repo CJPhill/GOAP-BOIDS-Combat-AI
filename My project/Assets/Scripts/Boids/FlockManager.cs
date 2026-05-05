@@ -79,6 +79,16 @@ public class FlockManager : MonoBehaviour
     public BoidAgent LeaderBoid => leaderBoid;
     public void SetLeader(BoidAgent leader) { leaderBoid = leader; }
 
+    /// <summary>
+    /// Stamped by <see cref="LeaderGoapBrain"/> at the moment the leader's resolved
+    /// goal changes; consumed once by the next <c>LateUpdate</c> cohesion redirect
+    /// to emit a single <c>FollowerReact</c> diagnostic event. Sentinel = -1f.
+    /// Only meaningful while <see cref="LeaderGoapBrain.DiagnosticLogging"/> is on.
+    /// Public so the static toggle's hand-off doesn't require routing through a
+    /// dedicated method (and so EditMode tests can poke it directly).
+    /// </summary>
+    public float pendingFollowerReactTime = -1f;
+
     // Number of scatter subgroups. Each boid is assigned a subgroupId in [0, count)
     // at spawn time (see SpawnFlock / AddBoids); ScatterDirectionPicker uses these
     // buckets so the flock disperses in a few coherent directions instead of every
@@ -695,6 +705,23 @@ public class FlockManager : MonoBehaviour
             }
 
             boid.UpdateBoid(separationHeading, alignmentHeading, cohesionCenter, neighborCount, crossFlockSeparation);
+        }
+
+        // Diagnostic: leader-goal-change → first-follower-cohesion-cycle propagation.
+        // pendingFollowerReactTime is stamped by LeaderGoapBrain on the same frame
+        // the leader's goal changes; this LateUpdate is the first opportunity for
+        // followers to feel the leader's new trajectory via the cohesion redirect
+        // above (lines 666-694). One event per goal change, then re-arm with -1f.
+        if (LeaderGoapBrain.DiagnosticLogging
+            && pendingFollowerReactTime >= 0f
+            && leaderBoid != null
+            && boids.Count > 1)
+        {
+            float delta = (Time.time - pendingFollowerReactTime) * 1000f;
+            BehavioralMetricsCollector.Instance?.LogEvent(
+                "FollowerReact", gameObject.name, (int)settings.flockType,
+                $"Followers={boids.Count - 1},DeltaMs={delta:F1}");
+            pendingFollowerReactTime = -1f;
         }
     }
 

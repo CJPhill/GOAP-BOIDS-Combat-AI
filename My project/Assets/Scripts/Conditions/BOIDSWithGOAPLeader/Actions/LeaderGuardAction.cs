@@ -27,6 +27,7 @@ public class LeaderGuardAction : GoapActionBase<LeaderGuardAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderGuardAction), data.Boid);
         data.GuardTimer = SafetyTimeout;
         data.GuardPoint = data.Boid.manager != null
             ? data.Boid.manager.transform.position

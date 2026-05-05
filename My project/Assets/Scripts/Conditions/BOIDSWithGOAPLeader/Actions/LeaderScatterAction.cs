@@ -24,6 +24,7 @@ public class LeaderScatterAction : GoapActionBase<LeaderScatterAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderScatterAction), data.Boid);
         Vector3 centroid = data.Boid.manager != null
             ? data.Boid.manager.GetFlockCenter()
             : data.Boid.Position;

@@ -34,6 +34,7 @@ public class LeaderAttackAction : GoapActionBase<LeaderAttackAction.Data>
 
     public override void Start(IMonoAgent agent, Data data)
     {
+        LeaderActionDiagnostic.LogStart(nameof(LeaderAttackAction), data.Boid);
         data.CurrentPhase = Phase.Approach;
         data.PhaseTimer = 0f;
         data.DamageDealt = false;
