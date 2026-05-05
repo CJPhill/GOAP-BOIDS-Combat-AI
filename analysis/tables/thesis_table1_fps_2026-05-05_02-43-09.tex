@@ -1,0 +1,30 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Per-trial median FPS [q25, q75] by architecture and configured agent count. Trimmed variant excludes the first 5\,s of each trial (steady-state). Source: batch 2026-05-05_02-43-09, 10 runs per cell.}
+  \label{tab:fps-by-architecture}
+\begin{tabular}{llrr}
+\toprule
+ &  & FPS (raw) & FPS (trimmed) \\
+Condition & N &  &  \\
+\midrule
+\multirow[t]{5}{*}{Pure BOIDS} & 50 & 435 [421, 448] & 432 [430, 435] \\
+ & 100 & 367 [335, 402] & 368 [366, 370] \\
+ & 200 & 223 [191, 274] & 235 [231, 241] \\
+ & 400 & 96 [77, 142] & 116 [111, 118] \\
+ & 800 & 37 [26, 50] & 40 [39, 42] \\
+\cline{1-4}
+\multirow[t]{5}{*}{BOIDS + GOAP Leader} & 50 & 428 [410, 444] & 425 [424, 426] \\
+ & 100 & 356 [329, 389] & 359 [357, 362] \\
+ & 200 & 220 [192, 269] & 233 [226, 238] \\
+ & 400 & 94 [80, 133] & 108 [105, 114] \\
+ & 800 & 36 [29, 51] & 41 [38, 44] \\
+\cline{1-4}
+\multirow[t]{5}{*}{GOAP + BOIDS Movement} & 50 & 412 [395, 433] & 410 [408, 413] \\
+ & 100 & 327 [297, 374] & 330 [327, 334] \\
+ & 200 & 200 [163, 252] & 207 [200, 222] \\
+ & 400 & 84 [63, 157] & 123 [90, 147] \\
+ & 800 & 27 [19, 58] & 41 [36, 61] \\
+\cline{1-4}
+\bottomrule
+\end{tabular}
+\end{table}
