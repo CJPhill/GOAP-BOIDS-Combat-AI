@@ -508,7 +508,12 @@ public class ConditionManager : MonoBehaviour
 
     private void OnValidate()
     {
-        agentCount = Mathf.Clamp(agentCount, 1, 100);
+        // Floor at 1; no upper clamp. The earlier [1, 100] clamp predated the
+        // batch sweep up to N=800 and silently truncated Inspector edits — a
+        // direct edit to "800" saved as 100 with no warning. The runner's
+        // SetAgentCount() does its own validation, and batch sizes come from
+        // ExperimentRunner.agentCountsToTest (not this field).
+        if (agentCount < 1) agentCount = 1;
     }
 
     #if UNITY_EDITOR

@@ -53,6 +53,10 @@ public class AutomatedPlayer : MonoBehaviour
     [SerializeField] private float lightAttackDamage   = 7f;
     [SerializeField] private float lightAttackCooldown = 0.55f;
     [SerializeField] private float lightAttackConeHalfAngle = 65f;
+    // Cap on enemies hit by one swing. Without this, dense clusters absorb the
+    // full melee cone and a single condition's tight-cohesion behavior drains
+    // its pooled HP super-linearly with N — see 2026-05-04 floor diagnostic.
+    [SerializeField] private int   lightAttackMaxTargets = 3;
 
     [Header("Combo / Heavy Attack")]
     [SerializeField] private int   maxComboCount       = 3;
@@ -61,11 +65,13 @@ public class AutomatedPlayer : MonoBehaviour
     [SerializeField] private float heavyAttackDamage   = 22f;
     [SerializeField] private float heavyAttackCooldown = 2.5f;
     [SerializeField] private float heavyWindUpDuration = 0.5f;
+    [SerializeField] private int   heavyAttackMaxTargets = 6;
 
     [Header("AOE Burst (spin attack)")]
     [SerializeField] private float aoeBurstRange    = 5f;
-    [SerializeField] private float aoeBurstDamage   = 11f;
+    [SerializeField] private float aoeBurstDamage   = 9f;
     [SerializeField] private float aoeBurstCooldown = 7f;
+    [SerializeField] private int   aoeBurstMaxTargets = 8;
 
     [Header("Ranged Throw")]
     [SerializeField] private float rangedThrowRange    = 28f;
@@ -432,14 +438,18 @@ public class AutomatedPlayer : MonoBehaviour
         if (lightAttackTimer > 0f) return;
 
         var enemies = GetEnemiesInRange(lightAttackRange);
-        int hits = 0;
+        // Cone filter first, then closest-first cap.
+        var inCone = new List<IEnemy>(enemies.Count);
         foreach (var e in enemies)
-        {
             if (InCone(GetEnemyPosition(e), lightAttackConeHalfAngle))
-            {
-                e.TakeDamage(lightAttackDamage);
-                hits++;
-            }
+                inCone.Add(e);
+        TakeClosest(inCone, lightAttackMaxTargets);
+
+        int hits = 0;
+        foreach (var e in inCone)
+        {
+            e.TakeDamage(lightAttackDamage);
+            hits++;
         }
 
         lightAttackTimer  = lightAttackCooldown;
@@ -464,6 +474,7 @@ public class AutomatedPlayer : MonoBehaviour
     private void ReleaseHeavyAttack()
     {
         var enemies = GetEnemiesInRange(heavyAttackRange);
+        TakeClosest(enemies, heavyAttackMaxTargets);
         int hits = 0;
         foreach (var e in enemies)
         {
@@ -481,6 +492,7 @@ public class AutomatedPlayer : MonoBehaviour
     private void ExecuteAOEBurst()
     {
         var enemies = GetEnemiesInRange(aoeBurstRange);
+        TakeClosest(enemies, aoeBurstMaxTargets);
         int hits = 0;
         foreach (var e in enemies)
         {
@@ -494,6 +506,26 @@ public class AutomatedPlayer : MonoBehaviour
         BehavioralMetricsCollector.Instance?.LogEvent(
             "PlayerAOEBurst", gameObject.name, -1,
             $"Hits={hits},Range={aoeBurstRange},Dmg={aoeBurstDamage}");
+    }
+
+    /// <summary>
+    /// In-place: keep only the <paramref name="maxTargets"/> enemies closest to
+    /// the player. Models the physical reach of a single swing/swing-arc — without
+    /// this, dense clusters absorb the full strike and a tightly-cohered flock
+    /// drains its pooled HP super-linearly with N. Cap=0 disables (keeps all).
+    /// </summary>
+    private void TakeClosest(List<IEnemy> enemies, int maxTargets)
+    {
+        if (maxTargets <= 0 || enemies.Count <= maxTargets) return;
+
+        Vector3 origin = transform.position;
+        enemies.Sort((a, b) =>
+        {
+            float da = (GetEnemyPosition(a) - origin).sqrMagnitude;
+            float db = (GetEnemyPosition(b) - origin).sqrMagnitude;
+            return da.CompareTo(db);
+        });
+        enemies.RemoveRange(maxTargets, enemies.Count - maxTargets);
     }
 
     private void TryRangedThrow()

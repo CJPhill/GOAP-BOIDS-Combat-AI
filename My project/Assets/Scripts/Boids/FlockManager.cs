@@ -85,6 +85,14 @@ public class FlockManager : MonoBehaviour
     // boid picking independently.
     public const int ScatterSubgroupCount = 3;
 
+    // Diagnostic toggle from the 2026-05-04 20-agent-floor investigation. The
+    // investigation concluded the original artifact was an override-not-applied
+    // bug fixed by the 2026-04-25 round. The instrumentation is left in place,
+    // off by default, for future debugging. Toggle via the "Thesis -> Toggle
+    // Floor Diagnostic" Editor menu.
+    public static bool DiagnosticLogging = false;
+    private int lastLoggedTargetCount = int.MinValue;
+
     public bool IsDead => currentFlockHealth <= 0f;
     /// <summary>Max HP, honoring the ConditionManager override when set.</summary>
     public float EffectiveMaxHealth => maxHealthOverride > 0f
@@ -122,6 +130,15 @@ public class FlockManager : MonoBehaviour
         int targetCount = Mathf.RoundToInt(
             Mathf.Lerp(settings.minSurvivorFraction, 1f, hp) * originalFlockSize);
 
+        if (DiagnosticLogging && targetCount != lastLoggedTargetCount)
+        {
+            Debug.Log($"[FloorDiag/Cull] {name} t={Time.timeSinceLevelLoad:F2} " +
+                      $"hp={currentFlockHealth:F0}/{maxHP:F0} ({hp * 100f:F0}%) " +
+                      $"originalFlockSize={originalFlockSize} boidsCount={boids.Count} " +
+                      $"targetCount={targetCount} delta={boids.Count - targetCount}");
+            lastLoggedTargetCount = targetCount;
+        }
+
         while (boids.Count > targetCount)
         {
             int last = boids.Count - 1;
@@ -155,6 +172,12 @@ public class FlockManager : MonoBehaviour
 
     private void KillAllBoids()
     {
+        if (DiagnosticLogging)
+        {
+            Debug.Log($"[FloorDiag/Wipe] {name} t={Time.timeSinceLevelLoad:F2} " +
+                      $"originalFlockSize={originalFlockSize} boidsAtWipe={boids.Count} " +
+                      $"hp={currentFlockHealth:F0}/{EffectiveMaxHealth:F0}");
+        }
         for (int i = boids.Count - 1; i >= 0; i--)
             Destroy(boids[i].gameObject);
         boids.Clear();
@@ -310,6 +333,17 @@ public class FlockManager : MonoBehaviour
             originalFlockSize = boids.Count;
             // Honour HP override before falling back to settings.maxHealth.
             currentFlockHealth = maxHealthOverride > 0f ? maxHealthOverride : settings.maxHealth;
+
+            if (DiagnosticLogging)
+            {
+                Debug.Log($"[FloorDiag/Spawn] {name} type={settings.flockType} " +
+                          $"flockSizeOverride={flockSizeOverride} originalFlockSize={originalFlockSize} " +
+                          $"settingsFlockSize={settings.flockSize} " +
+                          $"maxHealthOverride={maxHealthOverride:F0} effectiveMaxHP={EffectiveMaxHealth:F0} " +
+                          $"settingsMaxHP={settings.maxHealth:F0} minSurvivor={settings.minSurvivorFraction:F2} " +
+                          $"floorAtZero={Mathf.RoundToInt(settings.minSurvivorFraction * originalFlockSize)} " +
+                          $"t={Time.timeSinceLevelLoad:F2}");
+            }
         }
     }
 

@@ -174,6 +174,12 @@ public class ExperimentRunner : MonoBehaviour
         Debug.Log($"[ExperimentRunner] Starting batch: {totalTrials} trials " +
                   $"({modes.Length} mode(s) × {sizes.Length} size(s) × {runsPerCondition} runs × {conditionsToTest.Length} conditions), " +
                   $"duration ≤ {experimentDuration}s each. BaseSeed={baseSeed}.");
+        // Echo the actual sweep config so a stale Inspector value or wrong field
+        // edit is obvious from the first line of console output.
+        Debug.Log($"[ExperimentRunner] Sweep: modes=[{string.Join(",", modes)}] " +
+                  $"sizes=[{string.Join(",", sizes)}] " +
+                  $"conditions=[{string.Join(",", conditionsToTest)}] " +
+                  $"runsPerCondition={runsPerCondition}");
 
         // Track per-(mode, size, condition) aggregates for the final text summary.
         var perGroup = new Dictionary<(BenchmarkMode mode, int size, AgentCondition cond), List<TrialResult>>();

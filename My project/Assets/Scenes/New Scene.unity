@@ -276,15 +276,18 @@ MonoBehaviour:
   lightAttackDamage: 15
   lightAttackCooldown: 0.55
   lightAttackConeHalfAngle: 65
+  lightAttackMaxTargets: 3
   maxComboCount: 3
   comboWindowDuration: 1.3
   heavyAttackRange: 6
   heavyAttackDamage: 10
   heavyAttackCooldown: 2.5
   heavyWindUpDuration: 0.5
+  heavyAttackMaxTargets: 6
   aoeBurstRange: 8
   aoeBurstDamage: 22
   aoeBurstCooldown: 7
+  aoeBurstMaxTargets: 8
   rangedThrowRange: 28
   rangedThrowDamage: 20
   rangedThrowCooldown: 2.8
@@ -1632,11 +1635,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
-  runsPerCondition: 10
+  runsPerCondition: 1
   baseSeed: 42
   transitionDelay: 0.5
-  conditionsToTest: 010000000200000003000000
-  agentCountsToTest: 190000003200000064000000c80000009001000020030000
+  stimulusWarmupSec: 5
+  conditionsToTest: 02000000
+  agentCountsToTest: 20030000
+  modesToTest: 00000000
   outputDirectory: 
   isRunning: 0
   currentRunIndex: -1
@@ -1679,6 +1684,9 @@ MonoBehaviour:
   averageFPS: 0
   activeAgentCount: 0
   cpuTimeMs: 0
+  gcMemoryMB: 0
+  monoUsedMB: 0
+  totalAllocatedMB: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
