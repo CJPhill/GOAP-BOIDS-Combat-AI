@@ -56,12 +56,26 @@ public class LeaderFlankAction : GoapActionBase<LeaderFlankAction.Data>
 
     public override IActionRunState Perform(IMonoAgent agent, Data data, IActionContext context)
     {
-        Vector3 dir = (data.FlankPosition - data.Boid.Position).normalized;
-        data.Boid.velocity = dir * data.Boid.settings.maxSpeed;
+        Vector3 toSlot = data.FlankPosition - data.Boid.Position;
+        float dist = toSlot.magnitude;
 
-        float dist = Vector3.Distance(data.Boid.Position, data.FlankPosition);
         if (dist <= SlotTolerance)
-            return ActionRunState.Completed;
+        {
+            // At the flank slot — hold position. Returning Completed here (the
+            // pre-2026-05-05 behaviour) caused GOAP to immediately replan Flank
+            // and Start() the action again every ~50 ms while the leader's
+            // resolver still wanted Flank, producing the restart-spam pattern
+            // visible in EventLog_batch_2026-05-05_16-10-45.csv (~25 LeaderFlank
+            // ActionStart events in 2 s). Holding with Continue lets the timer
+            // run out naturally; the action terminates once when FlankTimer
+            // expires, matching what a single Flank should look like in logs.
+            data.Boid.velocity = Vector3.zero;
+        }
+        else
+        {
+            Vector3 dir = toSlot / Mathf.Max(dist, 0.001f);
+            data.Boid.velocity = dir * data.Boid.settings.maxSpeed;
+        }
 
         data.FlankTimer -= context.DeltaTime;
         if (data.FlankTimer <= 0f)

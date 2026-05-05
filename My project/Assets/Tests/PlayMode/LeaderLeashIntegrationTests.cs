@@ -34,8 +34,6 @@ using UnityEngine.TestTools;
 public class LeaderLeashIntegrationTests
 {
     private const string SceneName = "New Scene";
-    private const float TrialSeconds = 15f;
-    private const float WallDeadlineSeconds = 60f;
     private const float SampleIntervalSeconds = 0.5f;
     // Max separation default in LeaderGoapBrain.cs is 12 m. 2× allows brief
     // overshoot during a charge or kite retreat; sustained excursions past
@@ -43,7 +41,28 @@ public class LeaderLeashIntegrationTests
     private const float MaxAllowedSeparation = 24f;
 
     [UnityTest]
-    public IEnumerator Leader_StaysBoundedToFollowers_DuringCombatTrial()
+    public IEnumerator Leader_StaysBoundedToFollowers_AtN50_15s()
+    {
+        // Smallest cell that still produces meaningful follower-centroid gaps
+        // (~30 melee + 20 ranged after the standard 60/40 split). Cheap enough
+        // to run on every CI cycle without dominating the PlayMode suite.
+        yield return RunLeashTrialAndAssert(agentCount: 50, trialSeconds: 15f);
+    }
+
+    [UnityTest]
+    public IEnumerator Leader_StaysBoundedToFollowers_AtN200_30s()
+    {
+        // The N CJ observed runaway leaders at live (post-v1 batch). Larger
+        // flock + longer window exercises sustained leash behaviour over
+        // multiple GOAP-action cycles (Attack/Flank/Kite/Wander rotations
+        // through the full ranged-leader engagement loop), where centroid
+        // dilution and execution-order bugs are most likely to surface.
+        // Wall budget ≈ 30 s trial + 0.5 s transition + ~8 s spawn at N=200,
+        // doubled for safety = ~80 s; the helper sizes the deadline.
+        yield return RunLeashTrialAndAssert(agentCount: 200, trialSeconds: 30f);
+    }
+
+    private IEnumerator RunLeashTrialAndAssert(int agentCount, float trialSeconds)
     {
         if (!Application.CanStreamedLevelBeLoaded(SceneName))
         {
@@ -63,20 +82,17 @@ public class LeaderLeashIntegrationTests
         Assert.IsNotNull(runner, "No ExperimentRunner.");
 
         string tempDir = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"LeashIntegration_{System.DateTime.Now:HHmmss_fff}");
+            System.IO.Path.GetTempPath(),
+            $"LeashIntegration_N{agentCount}_{System.DateTime.Now:HHmmss_fff}");
         System.IO.Directory.CreateDirectory(tempDir);
 
         SetField(runner, "runsPerCondition", 1);
-        SetField(runner, "experimentDuration", TrialSeconds);
+        SetField(runner, "experimentDuration", trialSeconds);
         SetField(runner, "transitionDelay", 0.5f);
         SetField(runner, "outputDirectory", tempDir);
         SetField(runner, "baseSeed", 42);
         SetField(runner, "conditionsToTest", new[] { AgentCondition.BOIDSWithGOAPLeader });
-        // N=50 gives ~30 melee + 20 ranged after the standard 60/40 split,
-        // which is enough that each flock has multiple followers (so a runaway
-        // leader will produce a meaningful follower-centroid gap) but small
-        // enough that the test stays under the 60 s wall deadline.
-        SetField(runner, "agentCountsToTest", new[] { 50 });
+        SetField(runner, "agentCountsToTest", new[] { agentCount });
         SetField(runner, "stimulusWarmupSec", 0f);
         SetField(runner, "modesToTest", new[] { BenchmarkMode.Combat });
 
@@ -89,11 +105,14 @@ public class LeaderLeashIntegrationTests
         var lastBreachByFlock = new Dictionary<string, float>();
         float lastSampleTime = -SampleIntervalSeconds;
 
-        float wallDeadline = Time.realtimeSinceStartup + WallDeadlineSeconds;
+        // Wall deadline scales with trial duration plus generous spawn +
+        // transition overhead (≈ 10 s for spawn at N=200, plus the 0.5 s
+        // transition plus a 2× safety factor on the trial itself).
+        float wallDeadline = Time.realtimeSinceStartup + (trialSeconds * 2f + 20f);
         while ((bool)GetField(runner, "isRunning"))
         {
             if (Time.realtimeSinceStartup > wallDeadline)
-                Assert.Fail("Trial did not complete within wall deadline.");
+                Assert.Fail($"Trial at N={agentCount} did not complete within wall deadline.");
 
             if (Time.time - lastSampleTime >= SampleIntervalSeconds)
             {
@@ -108,7 +127,7 @@ public class LeaderLeashIntegrationTests
         // samples (a flock with no leader produces no samples and that's
         // a separate concern, not a leash failure).
         Assert.Greater(maxGapByFlock.Count, 0,
-            "Test did not observe any flock with a leader during the trial. "
+            $"Test at N={agentCount} did not observe any flock with a leader. "
             + "Either spawning failed or the BOIDSWithGOAPLeader condition is "
             + "not assigning leaders to flocks.");
 
@@ -130,7 +149,7 @@ public class LeaderLeashIntegrationTests
         {
             string summary = string.Join("\n", failures);
             Assert.Fail(
-                "Leader leash failed to keep one or more leaders bounded to their flock.\n"
+                $"Leader leash failed at N={agentCount} (trial = {trialSeconds:F0} s).\n"
                 + summary
                 + "\n\nLikely causes (in priority order):\n"
                 + "  1. Script execution order — GOAP Action.Perform runs after\n"
