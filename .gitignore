@@ -76,6 +76,11 @@ analysis/.venv/
 analysis/figures/
 analysis/**/__pycache__/
 analysis/**/.ipynb_checkpoints/
+# Throwaway helper scripts and pre-execution notebook artifacts. Convention:
+# any analysis/-prefixed file starting with "_" is local-only (synthetic-data
+# generators, executed-notebook copies, etc.). Real notebooks are tracked.
+analysis/_*.py
+analysis/_*.ipynb
 
 # Claude Code worktrees (transient, must not be committed as gitlinks)
 .claude/worktrees/

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -510,22 +511,33 @@ public class AutomatedPlayer : MonoBehaviour
 
     /// <summary>
     /// In-place: keep only the <paramref name="maxTargets"/> enemies closest to
-    /// the player. Models the physical reach of a single swing/swing-arc — without
-    /// this, dense clusters absorb the full strike and a tightly-cohered flock
-    /// drains its pooled HP super-linearly with N. Cap=0 disables (keeps all).
+    /// <paramref name="origin"/>. Models the physical reach of a single swing/
+    /// swing-arc — without this, dense clusters absorb the full strike and a
+    /// tightly-cohered flock drains its pooled HP super-linearly with N.
+    /// <paramref name="maxTargets"/> &lt;= 0 disables (keeps all).
+    ///
+    /// Public-static so EditMode tests (`AutomatedPlayerLogicTests.TakeClosest_*`)
+    /// can drive it without instantiating an AutomatedPlayer GameObject.
     /// </summary>
-    private void TakeClosest(List<IEnemy> enemies, int maxTargets)
+    public static void TakeClosest(List<IEnemy> enemies, Vector3 origin,
+                                   Func<IEnemy, Vector3> getPos, int maxTargets)
     {
-        if (maxTargets <= 0 || enemies.Count <= maxTargets) return;
+        if (maxTargets <= 0 || enemies == null || enemies.Count <= maxTargets) return;
 
-        Vector3 origin = transform.position;
         enemies.Sort((a, b) =>
         {
-            float da = (GetEnemyPosition(a) - origin).sqrMagnitude;
-            float db = (GetEnemyPosition(b) - origin).sqrMagnitude;
+            float da = (getPos(a) - origin).sqrMagnitude;
+            float db = (getPos(b) - origin).sqrMagnitude;
             return da.CompareTo(db);
         });
         enemies.RemoveRange(maxTargets, enemies.Count - maxTargets);
+    }
+
+    /// <summary>Instance shorthand: caps using this player's position and the
+    /// concrete-type position resolver.</summary>
+    private void TakeClosest(List<IEnemy> enemies, int maxTargets)
+    {
+        TakeClosest(enemies, transform.position, GetEnemyPosition, maxTargets);
     }
 
     private void TryRangedThrow()
