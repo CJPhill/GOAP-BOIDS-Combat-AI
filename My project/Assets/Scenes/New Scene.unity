@@ -4044,13 +4044,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: GameScripts::ExperimentRunner
   experimentDuration: 60
-  runsPerCondition: 20
+  runsPerCondition: 2
   baseSeed: 42
   transitionDelay: 0.5
   stimulusWarmupSec: 5
-  conditionsToTest: 010000000300000002000000
-  agentCountsToTest: 3200000064000000c80000009001000020030000
-  modesToTest: 0100000000000000
+  conditionsToTest: 02000000
+  agentCountsToTest: c8000000
+  modesToTest: 00000000
   outputDirectory: 
   isRunning: 0
   currentRunIndex: -1

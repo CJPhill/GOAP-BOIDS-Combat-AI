@@ -64,9 +64,14 @@ public class GOAPBoidBrain : MonoBehaviour
 
         bool slotAvailable = GOAPBoidAgent.CanAttack(agent.flockId);
 
+        // Hysteresis buffer matches LeaderGoapBrain so v2 batch sweeps the same anti-
+        // oscillation behavior across both GOAP-based conditions. Detail in
+        // wiki/methodology-revisions-2026-04 item 12.
+        const float hysteresisBuffer = 0.05f;
         var goal = GoalPriorityResolver.ResolveGOAPBoidGoal(
             healthPercent, playerNearby, cooldownReady, isRanged,
-            playerDist, isIsolated, flockCount, slotAvailable);
+            playerDist, isIsolated, flockCount, slotAvailable,
+            previousGoal: previousGoalType, hysteresisBuffer: hysteresisBuffer);
 
         currentGoalType = goal;
 

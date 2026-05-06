@@ -20,6 +20,16 @@ public static class GoalPriorityResolver
     /// <summary>
     /// Resolves which goal should be active for a GOAPWithBOIDSMovement agent.
     /// Priority: Scatter > Flee > Attack/Kite > Regroup > Flank > Guard > Wander
+    ///
+    /// Hysteresis (added 2026-05-06): when <paramref name="previousGoal"/> is Flee or
+    /// Scatter, the corresponding health threshold is treated as
+    /// <c>threshold + hysteresisBuffer</c> for the *exit* check. Prevents the
+    /// Flee↔Regroup oscillation observed in the 2026-05-06 smoke batch when
+    /// healthPercent hovers near fleeHealthThreshold and the resolver flips between
+    /// "below threshold → Flee (highest priority that fires)" and "at threshold →
+    /// fall through to Regroup (because isIsolated is true after fleeing)" frame to
+    /// frame. Defaults to <c>Wander</c> + zero buffer so existing callers (and tests)
+    /// that don't pass these get the unchanged pre-2026-05-06 behavior.
     /// </summary>
     public static GoalType ResolveGOAPBoidGoal(
         float healthPercent,
@@ -38,8 +48,23 @@ public static class GoalPriorityResolver
         // BoidSettings value as PureBOIDS's FlockStateResolver. Previously
         // hardcoded to 0.3 here, making Inspector tuning of fleeHealthThreshold
         // only affect PureBOIDS — a silent thesis-comparison parity bug.
-        float fleeHealthThreshold = 0.3f)
+        float fleeHealthThreshold = 0.3f,
+        GoalType previousGoal = GoalType.Wander,
+        float hysteresisBuffer = 0f)
     {
+        // Sticky Scatter: if we're already scattering, stay scattered until health
+        // recovers past the buffer. Otherwise the criticalHealthThreshold boundary
+        // lets Scatter→Flee→Scatter thrash the same way Flee→Regroup did.
+        if (previousGoal == GoalType.Scatter && playerNearby
+            && healthPercent < criticalHealthThreshold + hysteresisBuffer)
+            return GoalType.Scatter;
+
+        // Sticky Flee: regardless of playerNearby (flock should stay defensive even
+        // if the player briefly leaves perception range while we're at low health).
+        if (previousGoal == GoalType.Flee
+            && healthPercent < fleeHealthThreshold + hysteresisBuffer)
+            return GoalType.Flee;
+
         if (playerNearby && healthPercent < criticalHealthThreshold)
             return GoalType.Scatter;
 
@@ -84,7 +109,9 @@ public static class GoalPriorityResolver
         float kiteMinDistance = 8f,
         float guardInnerRange = 15f,
         float guardOuterRange = 30f,
-        float fleeHealthThreshold = 0.3f)
+        float fleeHealthThreshold = 0.3f,
+        GoalType previousGoal = GoalType.Wander,
+        float hysteresisBuffer = 0f)
     {
         // Same priority logic — leader always has an attack slot
         return ResolveGOAPBoidGoal(
@@ -92,6 +119,7 @@ public static class GoalPriorityResolver
             playerDist, isIsolated, flockCount,
             attackSlotAvailable: true,
             criticalHealthThreshold, kiteMinDistance, guardInnerRange, guardOuterRange,
-            fleeHealthThreshold);
+            fleeHealthThreshold,
+            previousGoal, hysteresisBuffer);
     }
 }

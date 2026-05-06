@@ -8,42 +8,43 @@ using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 /// <summary>
-/// PlayMode integration test for the LeaderGoapBrain leash. The pure-formula
-/// behaviour is already covered by <see cref="LeaderLeashTests"/>; this fixture
-/// catches the *integration* failure mode CJ observed while watching a live
-/// trial — leaders (especially the ranged Kite leader) drifting away from the
-/// flock and not coming back.
+/// PlayMode integration test for the leader↔follower coupling in the
+/// BOIDSWithGOAPLeader condition. The fixture catches the integration failure
+/// mode CJ observed while watching a live trial — leaders drifting away from
+/// the flock and the flock not tracking, producing visually disjointed swarms.
 ///
-/// One remaining reason the integration can fail even though the formula is correct:
-///   - Script-execution-order bug — if the GOAP Action.Perform runs AFTER
-///     LeaderGoapBrain.Update in the same frame, the leash multiplier on
-///     <c>boid.velocity</c> is overwritten before BoidAgent integrates
-///     velocity into position. The leader keeps charging at full speed.
+/// Coupling model (revised 2026-05-06): the leader-side velocity damping was
+/// removed; followers now run standard BOIDS cohesion plus a light additive
+/// bias toward the leader (<c>FlockManager.LateUpdate</c>'s
+/// <c>leaderInfluenceWeight = 0.3f</c>). The flock self-organizes around the
+/// leader's general trajectory rather than the leader being constrained.
 ///
-/// (Previously this fixture also guarded against centroid dilution — the leash
-/// math used <c>GetFlockCenter()</c> which averaged over ALL boids INCLUDING
-/// the leader, so at small N the leader's 1/N weight let it drift 25 m+ from
-/// the follower bulk while the leash still read under 12 m. Fixed by switching
-/// the leash to <c>GetFollowerCentroid()</c>; covered now by
-/// <see cref="FlockManagerCentroidTests"/>.)
+/// What this fixture validates: the bias is strong enough to keep the
+/// follower bulk within a flock-shaped envelope of the leader. The bound is
+/// behavior-correct rather than formula-derived — a flock-radius value at
+/// which the swarm still reads as "a flock with a leader" rather than "two
+/// disjoint groups." If the leader drifts far past the bound the bias is too
+/// weak; if the test bound becomes hard to hit even at N=200 the bias is too
+/// strong and we should pull it down.
 ///
 /// The test samples leader-vs-follower-only-centroid every ~0.5 s during a
-/// short Combat trial and asserts the max sustained gap stays under
-/// 1.5 × default maxLeaderSeparation. If it fails, the diagnostic message
-/// reports per-flock max gap so we can tell whether execution-order is firing.
+/// short Combat trial and asserts the max sustained gap stays under the
+/// configured envelope. If it fails, the diagnostic message reports per-flock
+/// max gap so we can decide whether to tune <c>leaderInfluenceWeight</c>.
 /// </summary>
 [TestFixture]
 public class LeaderLeashIntegrationTests
 {
     private const string SceneName = "New Scene";
     private const float SampleIntervalSeconds = 0.5f;
-    // Max separation default in LeaderGoapBrain.cs is 12 m. 1.5× allows brief
-    // overshoot during a charge or kite retreat; sustained excursions past
-    // this bound are the runaway behaviour CJ observed. Tightened from 2×
-    // (24 m) to 1.5× (18 m) when the leash measurement switched to
-    // GetFollowerCentroid() — the previous looseness was slack for centroid
-    // dilution that no longer exists.
-    private const float MaxAllowedSeparation = 18f;
+    // Behavior-correct envelope for the new follower-bias coupling model
+    // (2026-05-06 redesign). Room radius is 50 m; a 25 m envelope means the
+    // leader and the follower bulk are at most half the room apart, which
+    // still reads as a single flock. If the bias proves too weak to hit this
+    // bound at N=50 / N=200, the right move is to raise leaderInfluenceWeight
+    // in FlockManager.LateUpdate (currently 0.3f) before tightening this
+    // constant.
+    private const float MaxAllowedSeparation = 25f;
 
     [UnityTest]
     public IEnumerator Leader_StaysBoundedToFollowers_AtN50_15s()

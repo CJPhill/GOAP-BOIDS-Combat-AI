@@ -310,6 +310,23 @@ public class FlockManager : MonoBehaviour
         ResetMeleeAttack();
     }
 
+    /// <summary>
+    /// External hand-off for the BOIDSWithGOAPLeader condition. UpdateFlockState's
+    /// resolver-driven transitions are gated off when UsesGoapForBoids — this method
+    /// gives <see cref="LeaderGoapBrain"/> an explicit channel to drive flock state
+    /// from its resolved goal so followers' per-state steering branches in
+    /// <see cref="BoidAgent.UpdateBoid"/> (Engaging/Flanking/Scattering/Fleeing/Kiting/
+    /// Guarding/Regrouping) actually fire instead of staying at Idle. Called every
+    /// Update tick by the leader. State-change logging is intentionally omitted —
+    /// LeaderGoapBrain already emits a GoalChange event for the leader's goal flip,
+    /// which is the upstream cause of this state change; a second event for the same
+    /// logical transition would clutter the EventLog.
+    /// </summary>
+    public void SetStateFromLeader(FlockState newState)
+    {
+        state = newState;
+    }
+
     public void SetForeignBoids(List<BoidAgent> foreign)
     {
         foreignBoids = foreign;
@@ -703,22 +720,46 @@ public class FlockManager : MonoBehaviour
                 }
             }
 
-            // Leader redirect runs unconditionally so a stranded follower (zero neighbors
-            // because it drifted past perceptionRadius) still feels the pull toward the
-            // leader and can recover. Alignment stays gated by neighborCount.
+            // Leader influence model (revised 2026-05-06): followers always run STANDARD
+            // BOIDS cohesion (toward neighbor centroid) when they have neighbors. When a
+            // leader exists, an additive directional bias toward the leader is layered on
+            // top, applied at unit length (NOT as the raw displacement vector) so the bias
+            // does not dominate the cohesion direction at long range. Without normalisation
+            // a leader 30 m away with weight 0.3 produces a 9-unit addend that overwhelms a
+            // 1-unit standard cohesion vector, defeating the "light influence" intent.
+            //
+            // Bias weight ramps with neighborCount: tightly-packed followers get a light
+            // nudge (minLeaderWeight); stranded followers (zero neighbors) get the full pull
+            // (maxLeaderWeight) so they can rejoin instead of drifting away. The smooth ramp
+            // avoids the visual snap a discrete switch would produce as followers cross the
+            // perception-radius boundary in dispersed combat (perceptionRadius is only 2.5 m
+            // so this boundary is crossed often).
+            //
+            // BoidAgent.SteerTowards normalises the cohesion vector internally, so only the
+            // direction of cohesionCenter matters downstream — these magnitudes are tuned
+            // for which-side-wins-the-direction, not for force scale.
+            const float strandedNeighborCount = 5f;   // approx. count in a packed flock
+            const float minLeaderWeight       = 0.3f; // tightly packed
+            const float maxLeaderWeight       = 1.0f; // stranded
             bool hasLeader = leaderBoid != null && boid != leaderBoid && leaderBoid.gameObject != null;
+
             if (neighborCount > 0)
             {
                 alignmentHeading /= neighborCount;
-
-                if (hasLeader)
-                    cohesionCenter = leaderBoid.Position - boid.Position;
-                else
-                    cohesionCenter = (cohesionCenter / neighborCount) - boid.Position;
+                cohesionCenter = (cohesionCenter / neighborCount) - boid.Position;
             }
-            else if (hasLeader)
+            // else: cohesionCenter stays Vector3.zero; the leader bias below is the only
+            // cohesion source for stranded followers.
+
+            if (hasLeader)
             {
-                cohesionCenter = leaderBoid.Position - boid.Position;
+                Vector3 toLeader = leaderBoid.Position - boid.Position;
+                if (toLeader.sqrMagnitude > 0.000001f)
+                {
+                    float strandedness = Mathf.Clamp01(1f - neighborCount / strandedNeighborCount);
+                    float weight       = Mathf.Lerp(minLeaderWeight, maxLeaderWeight, strandedness);
+                    cohesionCenter    += weight * toLeader.normalized;
+                }
             }
 
             // Cross-flock separation (separation only, no alignment/cohesion)

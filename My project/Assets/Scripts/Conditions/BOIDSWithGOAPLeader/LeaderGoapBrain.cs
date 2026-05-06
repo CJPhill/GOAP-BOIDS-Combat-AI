@@ -23,7 +23,6 @@ public class LeaderGoapBrain : MonoBehaviour
 
     [SerializeField] private float playerDetectionRange = 30f;
     [SerializeField] private string playerTag = "Player";
-    [SerializeField] private float maxLeaderSeparation = 8f;
 
     private BoidAgent boid;
     private BoidGoapBrain brain;
@@ -77,6 +76,35 @@ public class LeaderGoapBrain : MonoBehaviour
             case GoalPriorityResolver.GoalType.Flank:        return typeof(LeaderFlankGoal);
             case GoalPriorityResolver.GoalType.Guard:        return typeof(LeaderGuardGoal);
             default:                                         return typeof(LeaderWanderGoal);
+        }
+    }
+
+    /// <summary>
+    /// Pure mapping from <see cref="GoalPriorityResolver.GoalType"/> (the leader's
+    /// resolved goal) to the <see cref="FlockManager.FlockState"/> that drives the
+    /// per-state steering branches in <see cref="BoidAgent.UpdateBoid"/>. Wander
+    /// maps to Idle (no engagement); Attack and RangedAttack both map to Engaging
+    /// since the per-boid steering is identical and ranged-vs-melee divergence is
+    /// handled by the formation-ring system (BoidSettings.targetSeekWeight is 0
+    /// for the ranged flock so its boids do not target-seek even in Engaging).
+    ///
+    /// Public-static so EditMode tests can lock the table down — production
+    /// callsite is <c>LeaderGoapBrain.Update</c> right after the goal switch.
+    /// Regression test: <c>LeaderGoalToFlockStateMappingTests</c>.
+    /// </summary>
+    public static FlockManager.FlockState MapGoalToFlockState(GoalPriorityResolver.GoalType goal)
+    {
+        switch (goal)
+        {
+            case GoalPriorityResolver.GoalType.Scatter:      return FlockManager.FlockState.Scattering;
+            case GoalPriorityResolver.GoalType.Flee:         return FlockManager.FlockState.Fleeing;
+            case GoalPriorityResolver.GoalType.Attack:       return FlockManager.FlockState.Engaging;
+            case GoalPriorityResolver.GoalType.RangedAttack: return FlockManager.FlockState.Engaging;
+            case GoalPriorityResolver.GoalType.Kite:         return FlockManager.FlockState.Kiting;
+            case GoalPriorityResolver.GoalType.Regroup:      return FlockManager.FlockState.Regrouping;
+            case GoalPriorityResolver.GoalType.Flank:        return FlockManager.FlockState.Flanking;
+            case GoalPriorityResolver.GoalType.Guard:        return FlockManager.FlockState.Guarding;
+            default:                                         return FlockManager.FlockState.Idle; // Wander
         }
     }
 
@@ -144,14 +172,25 @@ public class LeaderGoapBrain : MonoBehaviour
             float isolationThreshold = boid.settings != null ? boid.settings.isolationThreshold : 20f;
             float fleeThreshold = boid.settings != null ? boid.settings.fleeHealthThreshold : 0.3f;
 
+            // GetFollowerCentroid (not GetFlockCenter) for the same reason the removed
+            // velocity leash switched to it — including the leader in the centroid average
+            // dilutes the leader-to-bulk gap by 1/N at small flock counts and lets isolation
+            // go undetected. Matters more in the new coupling model where the leader can
+            // drift freely.
             bool isIsolated = boid.manager != null &&
-                Vector3.Distance(transform.position, boid.manager.GetFlockCenter()) > isolationThreshold;
+                Vector3.Distance(transform.position, boid.manager.GetFollowerCentroid()) > isolationThreshold;
             int flockCount = boid.manager != null ? boid.manager.BoidCount : 0;
 
+            // Hysteresis buffer for sticky Flee/Scatter: 0.05 = 5pp of pooled HP. Without
+            // this the resolver oscillates Flee↔Regroup at the fleeThreshold boundary
+            // (observed in the 2026-05-06 N=200 smoke batch — 67/143 GoalChange events
+            // were Flee↔Regroup flipping at ~50ms intervals when health hovered near 0.3).
+            const float hysteresisBuffer = 0.05f;
             var goal = GoalPriorityResolver.ResolveLeaderGoal(
                 healthPercent, playerNearby, cooldownReady, isRanged,
                 playerDist, isIsolated, flockCount,
-                criticalThreshold, kiteMin, guardInner, guardOuter, fleeThreshold);
+                criticalThreshold, kiteMin, guardInner, guardOuter, fleeThreshold,
+                previousGoalType, hysteresisBuffer);
 
             currentGoalType = goal;
 
@@ -198,22 +237,27 @@ public class LeaderGoapBrain : MonoBehaviour
                     provider.RequestGoal<LeaderWanderGoal>(); break;
             }
 
-            // Leash: if the leader has outrun the flock, slow down so followers can catch up
-            // rather than the leader abandoning the group. Applied unconditionally — previously
-            // gated on isMovementOverridden, which left Wander/Idle phases leashless.
-            // Distance is measured against the FOLLOWER-only centroid (not GetFlockCenter, which
-            // averages including the leader and dilutes the gap by 1/N at small flock counts).
-            if (boid.manager != null)
-            {
-                Vector3 flockCenter = boid.manager.GetFollowerCentroid();
-                float dist = Vector3.Distance(transform.position, flockCenter);
-                if (dist > maxLeaderSeparation)
-                {
-                    float excess = dist - maxLeaderSeparation;
-                    float slowFactor = Mathf.Clamp01(1f - excess / maxLeaderSeparation);
-                    boid.velocity *= slowFactor;
-                }
-            }
+            // Drive the flock's FSM state from the leader's resolved goal. Realises the
+            // "9 behaviors expressed at flock level" parity claim: followers' per-state
+            // steering branches (Engaging/Flanking/Scattering/Fleeing/Kiting/Guarding/
+            // Regrouping in BoidAgent.UpdateBoid) now fire in the Leader condition,
+            // matching how PureBOIDS exercises them via FlockStateResolver. Without this,
+            // FlockManager.UpdateFlockState's resolver-driven transitions are gated off
+            // by useGoap, so state stays at Idle and followers only cohere — they never
+            // actively scatter / flank / guard alongside the leader. Note: ranged followers
+            // have targetSeekWeight=0 so the per-state target-seek branches are no-ops
+            // for them; their attack mechanism is the formation-ring system. Setting
+            // state still benefits melee followers and unblocks BoidGoapBrain's
+            // distance-based attack fallback (gated on State == Engaging).
+            boid.manager.SetStateFromLeader(MapGoalToFlockState(goal));
+
+            // Leader-side velocity damping was removed 2026-05-06. The leash inversion moved
+            // the cohesion mechanism entirely to the follower side: followers now run standard
+            // BOIDS cohesion plus a light additive bias toward the leader (FlockManager.LateUpdate,
+            // leaderInfluenceWeight = 0.3f). The flock self-organizes around the leader's general
+            // trajectory rather than the leader being constrained to stay near the flock. Lets the
+            // leader execute GOAP actions (Attack, Flank, Kite, Scatter) on its own trajectory
+            // without dragging the entire flock onto the same divergent path.
         }
         finally
         {
