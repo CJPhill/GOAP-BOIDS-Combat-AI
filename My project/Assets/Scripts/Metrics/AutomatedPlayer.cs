@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 using Random = UnityEngine.Random;
 using Object = UnityEngine.Object;
 
@@ -116,6 +117,7 @@ public class AutomatedPlayer : MonoBehaviour
 
     private PlayerHealth playerHealth;
     private RoomBounds   roomBounds;
+    private NavMeshAgent navAgent;     // Optional — when present, movement routes through NavMesh.Move() so the player respects arena walls/obstacles instead of clipping through them. Null in test scenes without a baked NavMesh, in which case we fall back to direct transform translation.
 
     // Cached scene lookups — refreshed every 0.5s to avoid per-frame FindObjectsByType calls
     private BoidAgent[]    cachedBoids    = new BoidAgent[0];
@@ -134,9 +136,27 @@ public class AutomatedPlayer : MonoBehaviour
     {
         playerHealth = GetComponent<PlayerHealth>();
         roomBounds   = RoomBounds.Instance;
+        navAgent     = GetComponent<NavMeshAgent>();
+        ConfigureNavAgent();
         RefreshCache();
         ResetCombatState();
         EnterWander(); // deterministic starting phase
+    }
+
+    // NavMesh integration. We use agent.Move() (frame-by-frame motion delta) rather than
+    // SetDestination() so pathfinding is never invoked — pathfinding introduces non-determinism
+    // across runs that would corrupt the seeded reproducibility benchmark batches depend on.
+    // Obstacle avoidance is also disabled for the same reason.
+    private void ConfigureNavAgent()
+    {
+        if (navAgent == null) return;
+        navAgent.updateRotation       = false;                              // FaceNearestEnemy owns rotation
+        navAgent.autoBraking          = false;
+        navAgent.obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance;
+        navAgent.speed                = moveSpeed * dodgeSpeedMultiplier;   // upper bound; we drive distance per-frame
+        navAgent.acceleration         = 9999f;                              // effectively instant — Move() is direct
+        if (!navAgent.isOnNavMesh)
+            navAgent.Warp(transform.position);                              // snap onto mesh in case spawn was off
     }
 
     private void Update()
@@ -573,7 +593,11 @@ public class AutomatedPlayer : MonoBehaviour
 
     private void ExecuteDodge()
     {
-        transform.position += dodgeDirection * moveSpeed * dodgeSpeedMultiplier * Time.deltaTime;
+        Vector3 motion = dodgeDirection * moveSpeed * dodgeSpeedMultiplier * Time.deltaTime;
+        if (navAgent != null && navAgent.isOnNavMesh)
+            navAgent.Move(motion);
+        else
+            transform.position += motion;
         ClampToBounds();
     }
 
@@ -597,11 +621,16 @@ public class AutomatedPlayer : MonoBehaviour
     private void MoveInDirection(Vector3 dir)
     {
         if (dir.sqrMagnitude < 0.001f) return;
-        transform.position += dir.normalized * moveSpeed * Time.deltaTime;
+        Vector3 motion = dir.normalized * moveSpeed * Time.deltaTime;
+        if (navAgent != null && navAgent.isOnNavMesh)
+            navAgent.Move(motion);
+        else
+            transform.position += motion;
     }
 
     private void ClampToBounds()
     {
+        if (navAgent != null && navAgent.isOnNavMesh) return; // NavMesh keeps us on the mesh; RoomBounds is redundant
         if (roomBounds == null) return;
 
         Vector3 pos     = transform.position;

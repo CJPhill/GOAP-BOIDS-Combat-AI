@@ -23,7 +23,7 @@ public class LeaderGoapBrain : MonoBehaviour
 
     [SerializeField] private float playerDetectionRange = 30f;
     [SerializeField] private string playerTag = "Player";
-    [SerializeField] private float maxLeaderSeparation = 12f;
+    [SerializeField] private float maxLeaderSeparation = 8f;
 
     private BoidAgent boid;
     private BoidGoapBrain brain;
@@ -201,9 +201,11 @@ public class LeaderGoapBrain : MonoBehaviour
             // Leash: if the leader has outrun the flock, slow down so followers can catch up
             // rather than the leader abandoning the group. Applied unconditionally — previously
             // gated on isMovementOverridden, which left Wander/Idle phases leashless.
+            // Distance is measured against the FOLLOWER-only centroid (not GetFlockCenter, which
+            // averages including the leader and dilutes the gap by 1/N at small flock counts).
             if (boid.manager != null)
             {
-                Vector3 flockCenter = boid.manager.GetFlockCenter();
+                Vector3 flockCenter = boid.manager.GetFollowerCentroid();
                 float dist = Vector3.Distance(transform.position, flockCenter);
                 if (dist > maxLeaderSeparation)
                 {

@@ -112,11 +112,24 @@ public class LeaderLeashTests
     // ── Default maxLeaderSeparation value ──
 
     [Test]
-    public void DefaultValue_12Units_AllowsNormalLeadership()
+    public void DefaultValue_8Units_AllowsNormalLeadership()
     {
-        // A 10-unit lead (well within 12) should produce zero slowdown
-        float factor = ComputeLeashFactor(dist: 10f, maxSep: 12f);
+        // A 6-unit lead (well within 8) should produce zero slowdown.
+        // Default lowered from 12 → 8 on 2026-05-06 after the centroid-dilution
+        // fix exposed that the leader was sustainably exceeding the previous
+        // 1.5×-leash bound (18 m) with the corrected follower-only measurement.
+        float factor = ComputeLeashFactor(dist: 6f, maxSep: 8f);
         Assert.AreEqual(1f, factor, 0.001f,
-            "Default 12-unit leash should let leader maintain a 10-unit lead freely");
+            "Default 8-unit leash should let leader maintain a 6-unit lead freely");
+    }
+
+    [Test]
+    public void DefaultValue_8Units_HardStopsAt16()
+    {
+        // 2× default (16 m) is the formula's full-stop point. Integration test
+        // bound is 18 m, leaving 2 m of buffer for brief frame-by-frame overshoot.
+        float factor = ComputeLeashFactor(dist: 16f, maxSep: 8f);
+        Assert.AreEqual(0f, factor, 0.001f,
+            "At 2× default leash the leader should be fully stopped");
     }
 }

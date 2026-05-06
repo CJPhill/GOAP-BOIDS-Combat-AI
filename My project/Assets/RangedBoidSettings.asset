@@ -28,7 +28,7 @@ MonoBehaviour:
   obstacleMask:
     serializedVersion: 2
     m_Bits: 64
-  boundaryRadius: 15
+  boundaryRadius: 30
   boundaryTurnStrength: 5
   flockSize: 50
   spawnRadius: 5

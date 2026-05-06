@@ -14,31 +14,36 @@ using UnityEngine.TestTools;
 /// trial — leaders (especially the ranged Kite leader) drifting away from the
 /// flock and not coming back.
 ///
-/// Two reasons the integration can fail even though the formula is correct:
-///   1. Script-execution-order bug — if the GOAP Action.Perform runs AFTER
-///      LeaderGoapBrain.Update in the same frame, the leash multiplier on
-///      <c>boid.velocity</c> is overwritten before BoidAgent integrates
-///      velocity into position. The leader keeps charging at full speed.
-///   2. Centroid dilution — FlockManager.GetFlockCenter() averages over ALL
-///      boids INCLUDING the leader. With small per-flock counts (e.g. ranged
-///      flock at N=50 split ≈ 17), a 1/17 leader weight in the centroid lets
-///      the leader's apparent distance to centre stay under the 12 m leash
-///      threshold even when the leader is 25 m+ from the nearest follower.
+/// One remaining reason the integration can fail even though the formula is correct:
+///   - Script-execution-order bug — if the GOAP Action.Perform runs AFTER
+///     LeaderGoapBrain.Update in the same frame, the leash multiplier on
+///     <c>boid.velocity</c> is overwritten before BoidAgent integrates
+///     velocity into position. The leader keeps charging at full speed.
+///
+/// (Previously this fixture also guarded against centroid dilution — the leash
+/// math used <c>GetFlockCenter()</c> which averaged over ALL boids INCLUDING
+/// the leader, so at small N the leader's 1/N weight let it drift 25 m+ from
+/// the follower bulk while the leash still read under 12 m. Fixed by switching
+/// the leash to <c>GetFollowerCentroid()</c>; covered now by
+/// <see cref="FlockManagerCentroidTests"/>.)
 ///
 /// The test samples leader-vs-follower-only-centroid every ~0.5 s during a
 /// short Combat trial and asserts the max sustained gap stays under
-/// 2 × default maxLeaderSeparation. If it fails, the diagnostic message
-/// reports per-flock max gap so we can tell which hypothesis is firing.
+/// 1.5 × default maxLeaderSeparation. If it fails, the diagnostic message
+/// reports per-flock max gap so we can tell whether execution-order is firing.
 /// </summary>
 [TestFixture]
 public class LeaderLeashIntegrationTests
 {
     private const string SceneName = "New Scene";
     private const float SampleIntervalSeconds = 0.5f;
-    // Max separation default in LeaderGoapBrain.cs is 12 m. 2× allows brief
+    // Max separation default in LeaderGoapBrain.cs is 12 m. 1.5× allows brief
     // overshoot during a charge or kite retreat; sustained excursions past
-    // this bound are the runaway behaviour CJ observed.
-    private const float MaxAllowedSeparation = 24f;
+    // this bound are the runaway behaviour CJ observed. Tightened from 2×
+    // (24 m) to 1.5× (18 m) when the leash measurement switched to
+    // GetFollowerCentroid() — the previous looseness was slack for centroid
+    // dilution that no longer exists.
+    private const float MaxAllowedSeparation = 18f;
 
     [UnityTest]
     public IEnumerator Leader_StaysBoundedToFollowers_AtN50_15s()

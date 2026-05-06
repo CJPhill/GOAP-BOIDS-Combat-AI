@@ -630,6 +630,36 @@ public class FlockManager : MonoBehaviour
         return center / boids.Count;
     }
 
+    // Centroid of all boids EXCLUDING the leader. Used by the leader leash so the
+    // distance measurement reflects the bulk of the flock rather than being diluted
+    // by the leader's own position. At small per-flock counts (e.g. ranged at N=50
+    // → ~17 boids) the leader's 1/N contribution to GetFlockCenter() lets it drift
+    // 25 m+ from the actual flock bulk while the leash still reads under 12 m.
+    // Falls back to GetFlockCenter() when there is no leader or no followers.
+    public Vector3 GetFollowerCentroid()
+    {
+        if (leaderBoid == null || boids.Count <= 1)
+            return GetFlockCenter();
+        int leaderIndex = boids.IndexOf(leaderBoid);
+        return ComputeFollowerCentroid(boids.Count, leaderIndex, i => boids[i].Position, GetFlockCenter());
+    }
+
+    // Pure helper. Public-static so EditMode tests drive it directly without a scene
+    // setup; the GetFollowerCentroid() instance method is the production caller.
+    public static Vector3 ComputeFollowerCentroid(int count, int leaderIndex, System.Func<int, Vector3> positionAt, Vector3 fallback)
+    {
+        if (count <= 1 || leaderIndex < 0 || leaderIndex >= count) return fallback;
+        Vector3 sum = Vector3.zero;
+        int n = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (i == leaderIndex) continue;
+            sum += positionAt(i);
+            n++;
+        }
+        return n > 0 ? sum / n : fallback;
+    }
+
     private void ApplyFlockColor(BoidAgent boid)
     {
         Renderer renderer = boid.GetComponentInChildren<Renderer>();
