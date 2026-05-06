@@ -2,6 +2,18 @@ using UnityEngine;
 
 public class BoidAgent : MonoBehaviour, IEnemy
 {
+    // Arena floor is at y=0 (the BoxCollider named "r" in New Scene.unity, scale
+    // 20x1x20). Boids may not descend below y = kFloorY + kBoidGroundOffset; the
+    // offset accounts for the boid mesh half-height. See ApplyFloorClamp.
+    public const float kFloorY = 0f;
+    public const float kBoidGroundOffset = 0.5f;
+
+    // Static buffer for the OverlapSphereNonAlloc inside-collider recovery probe
+    // in ComputeObstacleAvoidance. Sized for the realistic worst case (a boid
+    // straddling two adjacent obstacles); larger overlaps just truncate, which
+    // is fine because the recovery only needs one collider to escape from.
+    private static readonly Collider[] sOverlapBuffer = new Collider[4];
+
     [HideInInspector] public BoidSettings settings;
     [HideInInspector] public FlockManager manager;
 
@@ -218,10 +230,35 @@ public class BoidAgent : MonoBehaviour, IEnemy
 
         // Move and orient
         cachedTransform.position += velocity * Time.deltaTime;
+
+        // Floor containment — last-resort guard against tunnelling and -Y drift.
+        // Mirrors the XZ boundary radius; this is the Y analogue. Cheap (one
+        // comparison per boid per frame). No-op when the boid is already above
+        // floor, which is the common case.
+        Vector3 pos = cachedTransform.position;
+        if (ApplyFloorClamp(ref pos, ref velocity, kFloorY + kBoidGroundOffset))
+            cachedTransform.position = pos;
+
         if (velocity.sqrMagnitude > 0.001f)
         {
             cachedTransform.forward = velocity.normalized;
         }
+    }
+
+    /// <summary>
+    /// Hard Y-clamp: if <paramref name="pos"/>.y is below <paramref name="minY"/>,
+    /// raises it to minY and zeroes any downward component of <paramref name="vel"/>.
+    /// Returns true when the clamp actually fired (used by the caller to skip the
+    /// position write in the common above-floor case). Pure function modulo the
+    /// ref params — extracted out of UpdateBoid so EditMode tests can hit it
+    /// without the manager / settings / scene-graph scaffolding.
+    /// </summary>
+    public static bool ApplyFloorClamp(ref Vector3 pos, ref Vector3 vel, float minY)
+    {
+        if (pos.y >= minY) return false;
+        pos.y = minY;
+        if (vel.y < 0f) vel.y = 0f;
+        return true;
     }
 
     private bool ConditionUsesGoap =>
@@ -313,6 +350,9 @@ public class BoidAgent : MonoBehaviour, IEnemy
 
     public void ApplyKnockback(Vector3 impulse)
     {
+        // Clamp downward component so player attacks cannot punt boids through
+        // the floor. Lateral and upward knockback are unchanged.
+        if (impulse.y < 0f) impulse.y = 0f;
         velocity += impulse;
     }
 
@@ -384,6 +424,29 @@ public class BoidAgent : MonoBehaviour, IEnemy
         if (settings.obstacleMask == 0)
             return Vector3.zero;
 
+        // Recovery probe: SphereCast cannot detect colliders the cast origin is
+        // already inside (Unity engine limitation), so once a boid penetrates an
+        // obstacle the forward avoidance below stops working for that boid /
+        // obstacle pair. OverlapSphereNonAlloc is the only API that catches the
+        // already-inside case. Static buffer = no per-frame GC; tiny radius +
+        // single-layer mask = microsecond-cheap in the common (empty) case.
+        int overlapCount = Physics.OverlapSphereNonAlloc(
+            cachedTransform.position,
+            settings.obstacleAvoidanceRadius * 0.5f,
+            sOverlapBuffer,
+            settings.obstacleMask);
+        if (overlapCount > 0)
+        {
+            Vector3 closest = sOverlapBuffer[0].ClosestPoint(cachedTransform.position);
+            Vector3 outward = cachedTransform.position - closest;
+            // Degenerate (cast origin coincides with closest point — center of a
+            // box, etc.): push straight up so the boid escapes onto the obstacle
+            // surface rather than sticking forever.
+            if (outward.sqrMagnitude < 0.0001f)
+                outward = Vector3.up;
+            return ComputeOverlapEscape(outward, settings.maxSteerForce, settings.obstacleAvoidanceWeight);
+        }
+
         Vector3 forward = cachedTransform.forward;
 
         // Check if there's an obstacle ahead
@@ -407,5 +470,18 @@ public class BoidAgent : MonoBehaviour, IEnemy
 
         // All directions blocked — steer away from the hit
         return SteerTowards(-hit.normal) * settings.obstacleAvoidanceWeight;
+    }
+
+    /// <summary>
+    /// Math half of the inside-collider recovery: turn an outward vector into a
+    /// steering acceleration scaled by <paramref name="weight"/> and capped at
+    /// <paramref name="maxSteerForce"/>. Pure function — extracted so EditMode
+    /// tests can verify the magnitude / direction without invoking Physics.
+    /// </summary>
+    public static Vector3 ComputeOverlapEscape(Vector3 outward, float maxSteerForce, float weight)
+    {
+        if (outward.sqrMagnitude < 0.0001f)
+            return Vector3.zero;
+        return outward.normalized * maxSteerForce * weight;
     }
 }
